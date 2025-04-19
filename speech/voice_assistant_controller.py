@@ -92,12 +92,10 @@ class VoiceAssistantController(LoggingMixin):
         """Handler for speech activity events from OpenAI API"""
         event_type = response.get('type', '')
         
-        # These events indicate user is speaking
         if event_type in ['input_audio_buffer.speech_started', 'input_audio_buffer.speech_detected']:
             self._register_activity()
             self.state = AssistantState.LISTENING
         
-        # These events indicate processing is happening
         elif event_type in ['response.text.delta', 'response.audio.delta']:
             self._register_activity()
             self.state = AssistantState.RESPONDING
@@ -130,28 +128,23 @@ class VoiceAssistantController(LoggingMixin):
             # Start inactivity monitor
             inactivity_task = asyncio.create_task(self._monitor_inactivity())
             
-            # Connect to OpenAI and process conversation
             await self.openai_api.setup_and_run(
                 self.mic_stream, 
                 self.audio_player,
                 handle_transcript=self._handle_transcript
             )
             
-            # Wait for inactivity monitor to complete
             await inactivity_task
         
         except Exception as e:
             self.logger.error("Error during conversation: %s", e)
         finally:
-            # Clean up audio components
             self.mic_stream.stop_stream()
             self.audio_player.stop()
             
-            # Reset state
             self.state = AssistantState.IDLE
             self.conversation_active = False
             
-            # Cooldown period before listening for wake word again
             self.logger.info("Conversation ended, cooldown for %s seconds...", self.cooldown_period)
             await asyncio.sleep(self.cooldown_period)
     
@@ -161,10 +154,8 @@ class VoiceAssistantController(LoggingMixin):
         if not delta:
             return
             
-        # Register activity when user is speaking
         self._register_activity()
         
-        # Log the transcript
         response_id = response.get('response_id', 'unknown')
         print(f"\n🎤 [{response_id[:8]}]: {delta}", flush=True)
     
@@ -177,18 +168,15 @@ class VoiceAssistantController(LoggingMixin):
         self.logger.info("Voice assistant started. Listening for wake word: '%s'", self.wake_word)
         self.should_stop = False
         
-        # Main loop - listen for wake word and handle conversations
         while not self.should_stop:
             try:
-                # Set state to idle and listen for wake word
                 self.state = AssistantState.IDLE
                 
-                # Use a background thread for wake word detection to keep
-                # the asyncio event loop responsive
+
                 wake_word_detected = await self._listen_for_wake_word_async()
                 
                 if wake_word_detected:
-                    # Handle the conversation when wake word is detected
+                    self.audio_player.play_sound("wake_word")
                     await self._handle_conversation()
                 
             except asyncio.CancelledError:
@@ -209,7 +197,6 @@ class VoiceAssistantController(LoggingMixin):
         self.should_stop = True
         self.conversation_active = False
         
-        # Clean up components
         if self.wake_word_listener:
             self.wake_word_listener.cleanup()
         

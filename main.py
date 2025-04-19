@@ -3,6 +3,7 @@ import logging
 import os
 from dotenv import load_dotenv
 
+from realtime.audio.player import PyAudioPlayer
 from utils.logging_mixin import setup_logging
 from speech.voice_assistant_controller import VoiceAssistantController
 
@@ -30,6 +31,9 @@ async def main():
         inactivity_timeout=7.0,
         cooldown_period=1.0
     )
+    
+    player = PyAudioPlayer()
+    player.play_sound("startup")
     
     try:
         await voice_assistant.run()

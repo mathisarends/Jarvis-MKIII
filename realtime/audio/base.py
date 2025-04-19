@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
+import os
 
 class AudioPlayerBase(ABC):
     """Abstract base class for audio players"""
+    
+    sounds_dir = "sounds"
     
     @abstractmethod
     def start(self):
@@ -14,6 +17,27 @@ class AudioPlayerBase(ABC):
     @abstractmethod
     def stop(self):
         """Stop the audio player and clean up resources"""
+        
+    @abstractmethod
+    def play_sound(self, sound_name: str) -> bool:
+        """
+        Play a sound file by name.
+        """
+        
+    @abstractmethod
+    def play_sound_blocking(self, sound_name: str) -> bool:
+        """
+        Play a sound file and wait for it to finish.
+        """
+        
+    def _get_sound_path(self, sound_name: str) -> str:
+        """Get the full path to a sound file"""
+        if sound_name.endswith('.mp3'):
+            filename = sound_name
+        else:
+            filename = f"{sound_name}.mp3"
+                
+        return os.path.join(self.sounds_dir, filename)
 
 
 class MicrophoneBase(ABC):

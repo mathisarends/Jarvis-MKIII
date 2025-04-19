@@ -1,20 +1,28 @@
 import base64
 import threading
 import queue
+import os
 from typing import override
+
 import pyaudio
+import pygame
+
 from realtime.config import FORMAT, CHANNELS, CHUNK, RATE
 from realtime.audio.base import AudioPlayerBase
+from utils.logging_mixin import LoggingMixin
+from utils.singleton_decorator import singleton
 
-class PyAudioPlayer(AudioPlayerBase):
-    """PyAudio implementation of the AudioPlayerBase class"""
-    def __init__(self):
+@singleton
+class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
+    """PyAudio implementation of the AudioPlayerBase class with sound file playback"""
+    def __init__(self, sounds_dir="sounds"):
         self.p = pyaudio.PyAudio()
         self.stream = None
         self.audio_queue = queue.Queue()
         self.is_playing = False
         self.player_thread = None
-    
+        self.sounds_dir = sounds_dir
+        
     @override
     def start(self):
         """Start the audio player thread"""
@@ -29,8 +37,8 @@ class PyAudioPlayer(AudioPlayerBase):
         self.player_thread = threading.Thread(target=self._play_audio_loop)
         self.player_thread.daemon = True
         self.player_thread.start()
-        print(f"Audio player started with sample rate: {RATE} Hz")
-    
+        self.logger.info("Audio player started with sample rate: %d Hz", RATE)
+        
     def _play_audio_loop(self):
         """Thread loop for playing audio chunks"""
         while self.is_playing:
@@ -42,8 +50,8 @@ class PyAudioPlayer(AudioPlayerBase):
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Error playing audio: {e}")
-    
+                self.logger.error("Error playing audio: %s", e)
+        
     @override
     def add_audio_chunk(self, base64_audio):
         """Add a base64 encoded audio chunk to the playback queue"""
@@ -51,7 +59,7 @@ class PyAudioPlayer(AudioPlayerBase):
             audio_data = base64.b64decode(base64_audio)
             self.audio_queue.put(audio_data)
         except Exception as e:
-            print(f"Error processing audio chunk: {e}")
+            self.logger.error("Error processing audio chunk: %s", e)
     
     @override
     def stop(self):
@@ -64,4 +72,68 @@ class PyAudioPlayer(AudioPlayerBase):
             self.stream.close()
             self.stream = None
         self.p.terminate()
-        print("Audio player stopped")
+        self.logger.error("Audio player stopped")
+        
+    @override
+    def play_sound(self, sound_name: str) -> bool:
+        """
+        Play a sound file asynchronously.
+        
+        Args:
+            sound_name: Name of the sound file (with or without .mp3 extension)
+        
+        Returns:
+            True if playback started successfully, False otherwise
+        """
+        try:
+            sound_path = self._get_sound_path(sound_name)
+            
+            if not os.path.exists(sound_path):
+                self.logger.warning("Sound file not found: %s", sound_path)
+                return False
+            
+            threading.Thread(
+                target=self.play_sound_blocking,
+                args=(sound_name,),
+                daemon=True
+            ).start()
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error("Error starting sound playback %s: %s", sound_name, e)
+            return False
+
+    @override
+    def play_sound_blocking(self, sound_name: str) -> bool:
+        """
+        Play an MP3 sound file and wait for it to complete.
+        
+        Args:
+            sound_name: Name of the sound file (with or without .mp3 extension)
+        
+        Returns:
+            True if playback successful, False otherwise
+        """
+        try:
+            sound_path = self._get_sound_path(sound_name)
+            
+            if not os.path.exists(sound_path):
+                self.logger.error("Sound file not found: %s", sound_path)
+                return False
+            
+            
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+                
+            sound = pygame.mixer.Sound(sound_path)
+            sound.play()
+            
+            while pygame.mixer.get_busy():
+                pygame.time.wait(100)
+                    
+            return True
+            
+        except Exception as e:
+            self.logger.error("Error playing sound %s: %s", sound_name, e)
+            return False

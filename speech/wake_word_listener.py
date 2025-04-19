@@ -46,7 +46,6 @@ class WakeWordListener:
         self.should_stop = False
         self._detection_event = threading.Event()
 
-
     def __enter__(self):
         return self
 
