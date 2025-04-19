@@ -11,30 +11,31 @@ from tools.weather.weather_client import WeatherClient
 async def get_weather() -> str:
     """
     Retrieves current weather information based on automatically detected location.
-    
+
     The tool uses IP-based geolocation to determine the user's current location
     and fetches the appropriate weather data. No parameters needed.
-    
+
     Returns:
         str: A formatted summary of the current weather at the detected location in natural language.
     """
     client = WeatherClient()
     weather_lines = await client.fetch_weather_data()
-    
+
     # Get current time
     now = datetime.datetime.now()
     current_time = now.strftime("%H:%M")
-    
+
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
         temperature=0.2,
         streaming=False,
     )
-    
+
     weather_text = "\n".join(weather_lines)
 
     # System-Prompt für natürliche Sprachausgabe
-    system_prompt = textwrap.dedent("""
+    system_prompt = textwrap.dedent(
+        """
 Du bist ein hochentwickelter KI-Assistent mit einem präzisen, effizienten Kommunikationsstil, ähnlich wie Jarvis (ohne 'Sir' zu verwenden).
 
 Deine Aufgabe ist es, Wetterinformationen in eine natürliche, gesprochene Form umzuwandeln.
@@ -51,9 +52,11 @@ Folgende Richtlinien solltest du beachten:
 7. Struktur: Aktuelle Bedingungen → Wichtige Änderungen → Empfehlungen (falls sinnvoll).
 
 Gib die optimierte Antwort zurück, ohne Erklärungen oder zusätzlichen Text.
-""")
+"""
+    )
 
-    human_prompt = textwrap.dedent(f"""
+    human_prompt = textwrap.dedent(
+        f"""
 Es ist {current_time} Uhr.
 
 Hier sind die Wetterdaten:
@@ -62,7 +65,8 @@ Hier sind die Wetterdaten:
 
 Bitte wandle diese Informationen in eine natürliche, gesprochene Antwort um.
 Falls die aktuelle Uhrzeit nach 18 Uhr liegt, erwähne auch kurz das Wetter für morgen.
-""")
+"""
+    )
 
     try:
         response = await llm.ainvoke(
@@ -71,7 +75,7 @@ Falls die aktuelle Uhrzeit nach 18 Uhr liegt, erwähne auch kurz das Wetter für
                 HumanMessage(content=human_prompt),
             ]
         )
-        
+
         speech_result = response.content.strip()
         return speech_result
     except (ValueError, ConnectionError, TimeoutError) as e:

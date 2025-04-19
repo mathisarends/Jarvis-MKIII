@@ -15,7 +15,6 @@ from realtime.config import (
     VOICE,
 )
 from realtime.realtime_tool_handler import RealtimeToolHandler
-from tools.time_tool import get_current_time
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
 from tools.tool_registry import ToolRegistry
@@ -56,8 +55,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
         """
         try:
             self.tool_registry.register_tool(get_weather)
-            self.tool_registry.register_tool(get_current_time)
             self.tool_registry.register_tool(web_search_tool)
+
             self.logger.info("All tools successfully registered")
         except Exception as e:
             self.logger.error("Failed to register tools: %s", e)
