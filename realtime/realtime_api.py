@@ -14,6 +14,7 @@ from realtime.config import (
     TEMPERATURE,
     VOICE,
 )
+from realtime.realtime_tool_handler import RealtimeToolHandler
 from tools.time_tool import get_current_time
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
@@ -41,22 +42,24 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.headers = OPENAI_HEADERS
         self.connection = None
         
-        # Initialize tool registry
+        self.tool_registry = ToolRegistry()
         self._init_tool_registry()
+        
+        self.tool_handler = RealtimeToolHandler(self.tool_registry)
         
         self.logger.info("OpenAI Realtime API class initialized")
 
     def _init_tool_registry(self) -> None:
         """
-        Initialize the tool registry and register the weather tool.
-        This is a private method that sets up all available tools.
+        Initialize the tool registry and register all available tools.
         """
-        self.tool_registry = ToolRegistry()
-        
-        self.tool_registry.register_tool(get_weather)
-        self.tool_registry.register_tool(get_current_time)
-        self.tool_registry.register_tool(web_search_tool)
-
+        try:
+            self.tool_registry.register_tool(get_weather)
+            self.tool_registry.register_tool(get_current_time)
+            self.tool_registry.register_tool(web_search_tool)
+            self.logger.info("All tools successfully registered")
+        except Exception as e:
+            self.logger.error("Failed to register tools: %s", e)
 
     def _get_openai_tools(self, tool_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
@@ -315,175 +318,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
         elif event_type == "response.done":
             self.logger.info("Response completed")
             
-            # Check if there's a function call in the response
-            await self._handle_function_call_in_response(response)
+            # Delegiere die Funktionsaufruf-Verarbeitung an den Tool-Handler
+            await self.tool_handler.handle_function_call_in_response(response, self.connection)
 
         elif event_type in ["error", "session.updated", "session.created"]:
             self.logger.info("Event received: %s", event_type)
             if event_type == "error":
                 self.logger.error("API error: %s", response)
-
-    async def _handle_function_call_in_response(self, response: Dict[str, Any]) -> None:
-        """
-        Handle function call if present in the response.done event.
-        
-        Args:
-            response: The response.done event data
-        """
-        try:
-            # Extract output from response
-            output = response.get("response", {}).get("output", [])
-            
-            # Check if there's any function_call in the output
-            for item in output:
-                if item.get("type") == "function_call":
-                    await self._process_function_call(item)
-        
-        except Exception as e:
-            self.logger.error("Error processing function call: %s", e)
-            self.logger.error(traceback.format_exc())
-
-    async def _process_function_call(self, function_call_item: Dict[str, Any]) -> None:
-        """
-        Process a function call item and send the result back to the API.
-        
-        Args:
-            function_call_item: The function call item from the response
-        """
-        if not self.connection:
-            self.logger.error(self.NO_CONNECTION_ERROR_MSG)
-            return
-            
-        try:
-            function_name = function_call_item.get("name")
-            call_id = function_call_item.get("call_id")
-            arguments_str = function_call_item.get("arguments", "{}")
-            
-            if not function_name or not call_id:
-                self.logger.error("Missing function name or call_id in function call")
-                return
-                
-            self.logger.info("Processing function call: %s with call_id: %s", function_name, call_id)
-            
-            # Parse the arguments
-            arguments = json.loads(arguments_str)
-            
-            # Execute the function
-            result = await self._execute_tool(function_name, arguments)
-            
-            # Send the result back to the API
-            await self._send_function_result(call_id, result)
-            
-            # Create a new response after sending the function result
-            await self._create_new_response()
-            
-        except Exception as e:
-            self.logger.error("Error processing function %s: %s", function_name, e)
-            self.logger.error(traceback.format_exc())
-
-    async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """
-        Execute a tool by name with the given arguments.
-        
-        Args:
-            tool_name: The name of the tool to execute
-            arguments: The arguments to pass to the tool
-            
-        Returns:
-            The result of the tool execution
-        """
-        tool = self.tool_registry.get_tool(tool_name)
-        if not tool:
-            self.logger.error("Tool %s not found in registry", tool_name)
-            return {"error": f"Tool {tool_name} not found"}
-            
-        self.logger.info("Executing tool %s with arguments: %s", tool_name, arguments)
-        
-        # TODO: Herausfinden, wie das hier mit einer Parameterbehafteten Funktion funktioniert.
-        try:
-            if hasattr(tool, "arun"):
-                if not arguments:
-                    return await tool.arun({})
-                if "tool_input" in arguments and len(arguments) == 1:
-                    return await tool.arun(arguments["tool_input"])
-                
-                return await tool.arun(arguments)
-                    
-            return tool.invoke(arguments)
-        
-        except Exception as e:
-            self.logger.error("Error executing tool %s: %s", tool_name, e)
-            self.logger.error(traceback.format_exc())
-            return {"error": str(e)}
-
-    async def _send_function_result(self, call_id: str, result: Any) -> None:
-        """
-        Send the function call result back to the API.
-        
-        Args:
-            call_id: The call_id from the function_call item
-            result: The result of the function execution
-        """
-        if not self.connection:
-            self.logger.error(self.NO_CONNECTION_ERROR_MSG)
-            return
-            
-        try:
-            # Convert result to string if it's not already
-            if isinstance(result, dict):
-                result_str = json.dumps(result)
-            elif not isinstance(result, str):
-                result_str = json.dumps({"result": str(result)})
-            else:
-                # If it's already a string, make sure it's valid JSON
-                try:
-                    json.loads(result)
-                    result_str = result
-                except json.JSONDecodeError:
-                    # If not valid JSON, wrap it
-                    result_str = json.dumps({"result": result})
-            
-            # Create the function call output message
-            function_output = {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": result_str
-                }
-            }
-            
-            self.logger.info("Sending function result for call_id %s: %s...", call_id, result_str[:100])
-            
-            # Send the function result
-            await self.connection.send(json.dumps(function_output))
-            
-        except Exception as e:
-            self.logger.error("Error sending function result: %s", e)
-            self.logger.error(traceback.format_exc())
-
-    async def _create_new_response(self) -> None:
-        """
-        Create a new response after sending a function result.
-        """
-        if not self.connection:
-            self.logger.error(self.NO_CONNECTION_ERROR_MSG)
-            return
-            
-        try:
-            # Create a new response
-            response_create = {
-                "type": "response.create"
-            }
-            
-            self.logger.info("Creating new response after function call result")
-            
-            # Send the response create message
-            await self.connection.send(json.dumps(response_create))
-            
-        except Exception as e:
-            self.logger.error("Error creating new response: %s", e)
-            self.logger.error(traceback.format_exc())
 
     def _handle_audio_delta(self, response, audio_player: AudioPlayerBase) -> None:
         """Handle audio responses from OpenAI API"""
