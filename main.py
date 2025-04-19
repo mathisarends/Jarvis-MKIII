@@ -1,58 +1,44 @@
 import asyncio
-import traceback
-
-from realtime.audio.microphone import PyAudioMicrophone
-from realtime.audio.player import PyAudioPlayer
 from realtime.config import OPENAI_API_KEY
-from realtime.openai.handlers import process_openai_responses
-from realtime.openai.session import create_openai_connection, initialize_session, send_audio_to_openai
-
+from realtime.audio.player import PyAudioPlayer
+from realtime.audio.microphone import PyAudioMicrophone
+from realtime.realtime_api import OpenAIRealtimeAPI
 
 async def main():
-    """Main function"""
-    # Check API key
     if not OPENAI_API_KEY:
-        print("Error: OpenAI API key missing. Please specify in .env file.")
+        print("Fehler: OpenAI API-Key fehlt. Bitte in .env-Datei angeben.")
         return
     
-    print("Connecting to OpenAI Realtime API...")
+    openai_api = OpenAIRealtimeAPI()
     
-    # Establish WebSocket connection to OpenAI
-    openai_ws = await create_openai_connection()
-    if not openai_ws:
-        return
+    mic_stream = PyAudioMicrophone()
+    audio_player = PyAudioPlayer()
+    
+    # Streams starten
+    mic_stream.start_stream()
+    audio_player.start()
     
     try:
-        await initialize_session(openai_ws)
+        def custom_transcript_handler(response):
+            """Benutzerdefinierter Handler für Transkriptionen"""
+            delta = response.get('delta', '')
+            if delta:
+                print(f"\n🎤 Du hast gesagt: {delta}", flush=True)
         
-        mic_stream = PyAudioMicrophone()
-        mic_stream.start_stream()
-        
-        audio_player = PyAudioPlayer()
-        audio_player.start()
-        
-        try:
-            await asyncio.gather(
-                send_audio_to_openai(mic_stream, openai_ws),
-                process_openai_responses(openai_ws, audio_player)
-            )
-        except asyncio.CancelledError:
-            print("Tasks cancelled")
-        finally:
-            mic_stream.cleanup()
-            audio_player.stop()
-            await openai_ws.close()
-    
-    except Exception as e:
-        print(f"Error in main loop: {e}")
-        traceback.print_exc()
-
+        await openai_api.setup_and_run(
+            mic_stream, 
+            audio_player,
+            handle_transcript=custom_transcript_handler
+        )
+    finally:
+        mic_stream.cleanup()
+        audio_player.stop()
 
 if __name__ == "__main__":
-    print("OpenAI Realtime API Microphone Demo")
-    print("Press Ctrl+C to exit")
+    print("OpenAI Realtime API Demo")
+    print("Drücke Strg+C zum Beenden")
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nUser interrupt - program terminating.")
+        print("\nBenutzereingabe - Programm wird beendet.")

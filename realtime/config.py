@@ -19,13 +19,11 @@ SYSTEM_MESSAGE = (
 )
 VOICE = 'alloy'
 
-# Audio Configuration
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 24000
 
-# Important event types to log
 LOG_EVENT_TYPES = [
     'error', 'response.content.done', 'rate_limits.updated',
     'response.done', 'input_audio_buffer.committed',
