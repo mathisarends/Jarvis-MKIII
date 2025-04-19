@@ -2,7 +2,6 @@ import json
 import base64
 import asyncio
 import traceback
-from typing import Optional
 import websockets
 from realtime.config import (
     OPENAI_WEBSOCKET_URL, 
@@ -20,11 +19,11 @@ class OpenAIRealtimeAPI(LoggingMixin):
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
     
     def __init__(self, 
-                system_message: str = SYSTEM_MESSAGE,
-                voice: str = VOICE,
-                temperature: float = 0.8,
-                websocket_url: str = OPENAI_WEBSOCKET_URL,
-                headers: Optional[dict] = None) -> None:
+                 system_message=SYSTEM_MESSAGE, 
+                 voice=VOICE, 
+                 temperature=0.8,
+                 websocket_url=OPENAI_WEBSOCKET_URL,
+                 headers=OPENAI_HEADERS):
         """
         Initialize the OpenAI Realtime API client.
         
@@ -35,8 +34,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             websocket_url: WebSocket URL for the connection
             headers: Headers for authentication
         """
-        self.headers = headers or dict(OPENAI_HEADERS)
-
         self.system_message = system_message
         self.voice = voice
         self.temperature = temperature

@@ -1,44 +1,51 @@
 import asyncio
-from realtime.config import OPENAI_API_KEY
-from realtime.audio.player import PyAudioPlayer
-from realtime.audio.microphone import PyAudioMicrophone
-from realtime.realtime_api import OpenAIRealtimeAPI
+import logging
+import os
+from dotenv import load_dotenv
+
+from utils.logging_mixin import setup_logging
+from speech.voice_assistant_controller import VoiceAssistantController
+
 
 async def main():
-    if not OPENAI_API_KEY:
-        print("Fehler: OpenAI API-Key fehlt. Bitte in .env-Datei angeben.")
+    """Main entry point for the voice assistant application"""
+    load_dotenv()
+    
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Error: OPENAI_API_KEY not found in .env file")
         return
     
-    openai_api = OpenAIRealtimeAPI()
+    if not os.getenv("PICO_ACCESS_KEY"):
+        print("Error: PICO_ACCESS_KEY not found in .env file")
+        return
     
-    mic_stream = PyAudioMicrophone()
-    audio_player = PyAudioPlayer()
+    setup_logging()
+    logger = logging.getLogger("main")
     
-    # Streams starten
-    mic_stream.start_stream()
-    audio_player.start()
+    logger.info("Starting voice assistant...")
+    
+    voice_assistant = VoiceAssistantController(
+        wake_word="jarvis",
+        sensitivity=0.7,
+        inactivity_timeout=7.0,
+        cooldown_period=1.0
+    )
     
     try:
-        def custom_transcript_handler(response):
-            """Benutzerdefinierter Handler für Transkriptionen"""
-            delta = response.get('delta', '')
-            if delta:
-                print(f"\n🎤 Du hast gesagt: {delta}", flush=True)
-        
-        await openai_api.setup_and_run(
-            mic_stream, 
-            audio_player,
-            handle_transcript=custom_transcript_handler
-        )
+        await voice_assistant.run()
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt detected")
     finally:
-        mic_stream.cleanup()
-        audio_player.stop()
+        await voice_assistant.stop()
+        logger.info("Application terminated")
+
 
 if __name__ == "__main__":
-    print("OpenAI Realtime API Demo")
-    print("Drücke Strg+C zum Beenden")
+    print("🎙️  Voice Assistant with Wake Word Detection")
+    print("   Say the wake word to start a conversation")
+    print("   Press Ctrl+C to exit")
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nBenutzereingabe - Programm wird beendet.")
+        print("\nUser interrupted - program terminating.")
