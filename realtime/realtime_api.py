@@ -253,8 +253,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]]
     ) -> None:
         """Route the event to the appropriate handler based on event type"""
-        print(f"Event type: {event_type}")
-        print("====")
         
         if event_type == "input_audio_buffer.speech_started":
             audio_player.clear_queue_and_stop()
