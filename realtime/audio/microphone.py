@@ -1,0 +1,49 @@
+import pyaudio
+from realtime.audio.base import MicrophoneBase
+from realtime.config import FORMAT, CHANNELS, RATE, CHUNK
+
+class PyAudioMicrophone(MicrophoneBase):
+    """PyAudio implementation of the MicrophoneBase class"""
+    def __init__(self):
+        self.p = pyaudio.PyAudio()
+        self.stream = None
+        self.is_active = False
+        self.audio_data = []
+        
+    def start_stream(self):
+        """Start the microphone stream"""
+        if self.stream is not None:
+            self.stop_stream()
+            
+        self.stream = self.p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            input=True,
+            frames_per_buffer=CHUNK
+        )
+        self.is_active = True
+        self.audio_data = []
+        print("Microphone stream started")
+        
+    def stop_stream(self):
+        """Stop the microphone stream"""
+        if self.stream is not None:
+            self.stream.stop_stream()
+            self.stream.close()
+            self.stream = None
+        self.is_active = False
+        print("Microphone stream stopped")
+        
+    def read_chunk(self):
+        """Read a chunk of audio data from the microphone"""
+        if self.stream and self.is_active:
+            data = self.stream.read(CHUNK, exception_on_overflow=False)
+            self.audio_data.append(data)
+            return data
+        return None
+    
+    def cleanup(self):
+        """Free resources"""
+        self.stop_stream()
+        self.p.terminate()
