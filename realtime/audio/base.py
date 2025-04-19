@@ -12,6 +12,10 @@ class AudioPlayerBase(ABC):
         """Start the audio player"""
 
     @abstractmethod
+    def clear_queue_and_stop(self):
+        """Stop the current audio stream immediately and clear the audio queue."""
+
+    @abstractmethod
     def add_audio_chunk(self, base64_audio):
         """Add a base64 encoded audio chunk to be played"""
 
