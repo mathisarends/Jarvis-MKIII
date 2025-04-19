@@ -16,31 +16,64 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
 
-    def __init__(
-        self,
-        system_message: str = SYSTEM_MESSAGE,
-        voice: str = VOICE,
-        temperature: float = TEMPERATURE,
-        websocket_url: str = OPENAI_WEBSOCKET_URL,
-        headers: Dict[str, str] = OPENAI_HEADERS,
-    ):
+    def __init__(self):
         """
         Initialize the OpenAI Realtime API client.
-
-        Args:
-            system_message: System instructions for the assistant
-            voice: Voice to use for audio responses
-            temperature: Temperature setting for generation
-            websocket_url: WebSocket URL for the connection
-            headers: Headers for authentication
+        All configuration is loaded from config files.
         """
-        self.system_message = system_message
-        self.voice = voice
-        self.temperature = temperature
-        self.websocket_url = websocket_url
-        self.headers = headers
+        self.system_message = SYSTEM_MESSAGE
+        self.voice = VOICE
+        self.temperature = TEMPERATURE
+        self.websocket_url = OPENAI_WEBSOCKET_URL
+        self.headers = OPENAI_HEADERS
         self.connection = None
         self.logger.info("OpenAI Realtime API class initialized")
+
+    async def setup_and_run(
+        self,
+        mic_stream,
+        audio_player: AudioPlayerBase,
+        handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
+        handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> bool:
+        """
+        Set up the connection and run the main loop.
+
+        Args:
+            mic_stream: A MicrophoneStream object for audio input
+            audio_player: An AudioPlayer object for audio playback
+            handle_text: Optional function to handle text responses
+            handle_transcript: Optional function to handle transcript responses
+
+        Returns:
+            True on successful execution, False on error
+        """
+        if not await self.create_connection():
+            return False
+
+        if not await self.initialize_session():
+            await self.close()
+            return False
+
+        try:
+            await asyncio.gather(
+                self.send_audio(mic_stream),
+                self.process_responses(
+                    audio_player=audio_player,
+                    handle_text=handle_text,
+                    handle_transcript=handle_transcript,
+                ),
+            )
+            return True
+        except asyncio.CancelledError:
+            self.logger.info("Tasks were cancelled")
+            return True
+        except Exception as e:
+            self.logger.error("Error in main loop: %s", e)
+            self.logger.error(traceback.format_exc())
+            return False
+        finally:
+            await self.close()
 
     async def create_connection(self) -> Optional[websockets.WebSocketClientProtocol]:
         """
@@ -134,32 +167,42 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.error("Error sending audio: %s", e)
 
     async def process_responses(
-            self,
-            audio_player: AudioPlayerBase,
-            handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
-            handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-        ) -> None:
-            """
-            Process responses from the OpenAI API.
+        self,
+        audio_player: AudioPlayerBase,
+        handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
+        handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        """
+        Process responses from the OpenAI API.
 
-            Args:
-                audio_player: An AudioPlayer object for audio playback
-                handle_text: Optional function to handle text responses
-                handle_transcript: Optional function to handle transcript responses
-            """
-            if not self.connection:
-                self.logger.error(self.NO_CONNECTION_ERROR_MSG)
-                return
+        Args:
+            audio_player: An AudioPlayer object for audio playback
+            handle_text: Optional function to handle text responses
+            handle_transcript: Optional function to handle transcript responses
+        """
+        if not self.connection:
+            self.logger.error(self.NO_CONNECTION_ERROR_MSG)
+            return
 
-            try:
-                self.logger.info("Starting response processing...")
-                async for message in self.connection:
-                    await self._process_single_message(message, audio_player, handle_text, handle_transcript)
-                    
-            except Exception as e:
-                self.logger.error("Error processing responses: %s", e)
-                self.logger.error(traceback.format_exc())
-            
+        try:
+            self.logger.info("Starting response processing...")
+            async for message in self.connection:
+                await self._process_single_message(message, audio_player, handle_text, handle_transcript)
+                
+        except Exception as e:
+            self.logger.error("Error processing responses: %s", e)
+            self.logger.error(traceback.format_exc())
+
+    async def close(self) -> None:
+        """Close the connection"""
+        if not self.connection:
+            return
+
+        self.logger.info("Closing connection...")
+        await self.connection.close()
+        self.connection = None
+        self.logger.info("Connection closed")
+
     async def _process_single_message(
         self, 
         message: str, 
@@ -182,7 +225,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 
         except Exception as e:
             self.logger.error("Error processing single message: %s", e)
-            
+
     def _parse_response(self, message: str) -> Optional[Dict[str, Any]]:
         """Parse JSON response and validate it's a dictionary"""
         try:
@@ -200,7 +243,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except json.JSONDecodeError:
             self.logger.warning("Warning: Received non-JSON message from server")
             return None
-            
+
     async def _route_event(
         self, 
         event_type: str, 
@@ -229,64 +272,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
             if event_type == "error":
                 self.logger.error("API error: %s", response)
 
-    async def close(self) -> None:
-        """Close the connection"""
-        if not self.connection:
-            return
-
-        self.logger.info("Closing connection...")
-        await self.connection.close()
-        self.connection = None
-        self.logger.info("Connection closed")
-
-    async def setup_and_run(
-        self,
-        mic_stream,
-        audio_player: AudioPlayerBase,
-        handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
-        handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-    ) -> bool:
-        """
-        Set up the connection and run the main loop.
-
-        Args:
-            mic_stream: A MicrophoneStream object for audio input
-            audio_player: An AudioPlayer object for audio playback
-            handle_text: Optional function to handle text responses
-            handle_transcript: Optional function to handle transcript responses
-
-        Returns:
-            True on successful execution, False on error
-        """
-        if not await self.create_connection():
-            return False
-
-        if not await self.initialize_session():
-            await self.close()
-            return False
-
-        try:
-            await asyncio.gather(
-                self.send_audio(mic_stream),
-                self.process_responses(
-                    audio_player=audio_player,
-                    handle_text=handle_text,
-                    handle_transcript=handle_transcript,
-                ),
-            )
-            return True
-        except asyncio.CancelledError:
-            self.logger.info("Tasks were cancelled")
-            return True
-        except Exception as e:
-            self.logger.error("Error in main loop: %s", e)
-            self.logger.error(traceback.format_exc())
-            return False
-        finally:
-            await self.close()
-
     def _handle_audio_delta(self, response, audio_player: AudioPlayerBase) -> None:
-        """Default handler for audio responses"""
+        """Handle audio responses from OpenAI API"""
         base64_audio = response.get("delta", "")
         if not base64_audio or not isinstance(base64_audio, str):
             return

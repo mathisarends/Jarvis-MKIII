@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-realtime-preview-2024-12-17"
+OPENAI_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17"
 OPENAI_WEBSOCKET_URL = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
 OPENAI_HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -23,6 +23,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 24000
+TEMPERATURE = 0.8
 
 LOG_EVENT_TYPES = [
     "error",
