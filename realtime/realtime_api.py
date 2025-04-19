@@ -22,6 +22,7 @@ from tools.tool_registry import ToolRegistry
 
 from utils.logging_mixin import LoggingMixin
 
+
 class OpenAIRealtimeAPI(LoggingMixin):
     """
     Class for managing OpenAI Realtime API connections and communications.
@@ -41,12 +42,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.websocket_url = OPENAI_WEBSOCKET_URL
         self.headers = OPENAI_HEADERS
         self.connection = None
-        
+
         self.tool_registry = ToolRegistry()
         self._init_tool_registry()
-        
+
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
-        
+
         self.logger.info("OpenAI Realtime API class initialized")
 
     def _init_tool_registry(self) -> None:
@@ -61,13 +62,15 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Failed to register tools: %s", e)
 
-    def _get_openai_tools(self, tool_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def _get_openai_tools(
+        self, tool_names: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get the OpenAI-compatible tool schemas for specified tools or all tools.
-        
+
         Args:
             tool_names: Optional list of tool names to include, if None, all tools are included
-            
+
         Returns:
             List of OpenAI-compatible tool schemas
         """
@@ -136,17 +139,20 @@ class OpenAIRealtimeAPI(LoggingMixin):
             )
             self.logger.info("Connection successfully established!")
             return self.connection
-        except Exception as e:
-            self.logger.error("Connection error: %s", e)
-            return None
+
+        except websockets.exceptions.InvalidStatusCode as e:
+            self.logger.error("Invalid status code from WebSocket server: %s", e)
+        except ConnectionRefusedError as e:
+            self.logger.error("Connection refused: %s", e)
+        except OSError as e:
+            self.logger.error("OS-level connection error: %s", e)
 
     async def initialize_session(self) -> bool:
-        """ Initialize a session with the OpenAI API.
-        """
+        """Initialize a session with the OpenAI API."""
         if not self.connection:
             self.logger.error(self.NO_CONNECTION_ERROR_MSG)
             return False
-        
+
         session_update = {
             "type": "session.update",
             "session": {
@@ -157,7 +163,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 "instructions": self.system_message,
                 "modalities": ["text", "audio"],
                 "temperature": self.temperature,
-                "tools": self._get_openai_tools()
+                "tools": self._get_openai_tools(),
             },
         }
 
@@ -169,7 +175,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Error initializing session: %s", e)
             return False
-        
+
     async def send_audio(self, mic_stream) -> None:
         """
         Send audio data from the microphone to the OpenAI API.
@@ -206,8 +212,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
                 await asyncio.sleep(0.01)
 
-        except Exception as e:
-            self.logger.error("Error sending audio: %s", e)
+        except websockets.exceptions.ConnectionClosedError as e:
+            self.logger.error(
+                "WebSocket connection closed unexpectedly during audio send: %s", e
+            )
+        except asyncio.TimeoutError as e:
+            self.logger.error("Timeout while sending audio: %s", e)
 
     async def process_responses(
         self,
@@ -234,9 +244,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     message, audio_player, handle_text, handle_transcript
                 )
 
-        except Exception as e:
-            self.logger.error("Error processing responses: %s", e)
-            self.logger.error(traceback.format_exc())
+        except websockets.exceptions.ConnectionClosedError as e:
+            self.logger.error(
+                "WebSocket connection closed while waiting for responses: %s", e
+            )
+        except asyncio.TimeoutError as e:
+            self.logger.error("Timeout while receiving responses: %s", e)
 
     async def close(self) -> None:
         """Close the connection"""
@@ -265,13 +278,14 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
             event_type = response.get("type", "")
 
-            # Handle different event types
             await self._route_event(
                 event_type, response, audio_player, handle_text, handle_transcript
             )
 
-        except Exception as e:
-            self.logger.error("Error processing single message: %s", e)
+        except json.JSONDecodeError as e:
+            self.logger.warning("Received malformed JSON message: %s", e)
+        except KeyError as e:
+            self.logger.warning("Expected key missing in message: %s", e)
 
     def _parse_response(self, message: str) -> Optional[Dict[str, Any]]:
         """Parse JSON response and validate it's a dictionary"""
@@ -317,9 +331,10 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         elif event_type == "response.done":
             self.logger.info("Response completed")
-            
-            # Delegiere die Funktionsaufruf-Verarbeitung an den Tool-Handler
-            await self.tool_handler.handle_function_call_in_response(response, self.connection)
+
+            await self.tool_handler.handle_function_call_in_response(
+                response, self.connection
+            )
 
         elif event_type in ["error", "session.updated", "session.created"]:
             self.logger.info("Event received: %s", event_type)

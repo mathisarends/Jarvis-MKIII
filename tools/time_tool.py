@@ -1,6 +1,7 @@
 import datetime
 from langchain.tools import tool
 
+
 @tool
 def get_current_time() -> str:
     """

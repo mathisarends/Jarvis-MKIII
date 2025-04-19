@@ -186,46 +186,45 @@ class LangChainToOpenAIConverter(LoggingMixin):
         """
         return [self.convert_tool(tool) for tool in lc_tools]
 
-
     def _extract_parameters(self, lc_tool: BaseTool) -> Dict[str, Any]:
         """
         Extracts parameters from a LangChain tool with early returns and cleaner structure.
-        
+
         Args:
             lc_tool: A LangChain tool
-            
+
         Returns:
             Dict: OpenAI-style parameters dictionary
         """
         parameters = {"type": "object", "properties": {}, "required": []}
-        
+
         if hasattr(lc_tool, "args_schema"):
             schema_params = self._extract_from_schema(lc_tool)
             if schema_params:
                 return schema_params
-        
+
         if hasattr(lc_tool, "_run") and callable(lc_tool._run):
             sig_params = self._extract_from_signature(lc_tool)
             if sig_params:
                 return sig_params
-        
+
         return parameters
 
     def _extract_from_schema(self, lc_tool: BaseTool) -> Optional[Dict[str, Any]]:
         """
         Extract parameters from a tool's args_schema.
-        
+
         Args:
             lc_tool: A LangChain tool
-            
+
         Returns:
             Optional[Dict]: Parameters dictionary or None if extraction failed
         """
         parameters = {"type": "object", "properties": {}, "required": []}
-        
+
         try:
             schema = lc_tool.args_schema.schema()
-            
+
             if "properties" in schema:
                 parameters["properties"] = {
                     key: {
@@ -236,46 +235,44 @@ class LangChainToOpenAIConverter(LoggingMixin):
                     }
                     for key, val in schema["properties"].items()
                 }
-                
+
             if "required" in schema:
                 parameters["required"] = schema["required"]
-                
+
             return parameters
         except (AttributeError, TypeError):
-            self.logger.debug(
-                "Failed to extract schema from tool '%s'", lc_tool.name
-            )
+            self.logger.debug("Failed to extract schema from tool '%s'", lc_tool.name)
             return None
 
     def _extract_from_signature(self, lc_tool: BaseTool) -> Optional[Dict[str, Any]]:
         """
         Extract parameters from a tool's function signature.
-        
+
         Args:
             lc_tool: A LangChain tool
-            
+
         Returns:
             Optional[Dict]: Parameters dictionary or None if extraction failed
         """
         parameters = {"type": "object", "properties": {}, "required": []}
-        
+
         try:
             sig = inspect.signature(lc_tool._run)
-            
+
             for param_name, param in sig.parameters.items():
                 if param_name == "self":
                     continue
-                    
+
                 param_type = self._get_param_type(param.annotation)
-                    
+
                 parameters["properties"][param_name] = {
                     "type": param_type,
                     "description": f"{param_name.replace('_', ' ').capitalize()}",
                 }
-                    
+
                 if param.default == inspect.Parameter.empty:
                     parameters["required"].append(param_name)
-                    
+
             return parameters
         except (AttributeError, TypeError):
             self.logger.debug(

@@ -10,8 +10,5 @@ def web_search_tool(query: str) -> str:
     Args:
         query: The search query.
     """
-    tavily_tool = TavilySearchResults(
-        max_results=2,
-        search_depth="basic"
-    )
+    tavily_tool = TavilySearchResults(max_results=2, search_depth="basic")
     return tavily_tool.invoke(query)
