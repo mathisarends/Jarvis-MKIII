@@ -15,10 +15,11 @@ from realtime.config import (
     VOICE,
 )
 from tools.time_tool import get_current_time
-from utils.logging_mixin import LoggingMixin
-from tools.tool_registry import ToolRegistry
 from tools.weather.weather_tool import get_weather
+from tools.web_search_tool import web_search_tool
+from tools.tool_registry import ToolRegistry
 
+from utils.logging_mixin import LoggingMixin
 
 class OpenAIRealtimeAPI(LoggingMixin):
     """
@@ -54,6 +55,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         
         self.tool_registry.register_tool(get_weather)
         self.tool_registry.register_tool(get_current_time)
+        self.tool_registry.register_tool(web_search_tool)
 
 
     def _get_openai_tools(self, tool_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -361,7 +363,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 self.logger.error("Missing function name or call_id in function call")
                 return
                 
-            self.logger.info(f"Processing function call: {function_name} with call_id: {call_id}")
+            self.logger.info("Processing function call: %s with call_id: %s", function_name, call_id)
             
             # Parse the arguments
             arguments = json.loads(arguments_str)
@@ -376,7 +378,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             await self._create_new_response()
             
         except Exception as e:
-            self.logger.error(f"Error processing function {function_name}: {e}")
+            self.logger.error("Error processing function %s: %s", function_name, e)
             self.logger.error(traceback.format_exc())
 
     async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
@@ -392,34 +394,25 @@ class OpenAIRealtimeAPI(LoggingMixin):
         """
         tool = self.tool_registry.get_tool(tool_name)
         if not tool:
-            self.logger.error(f"Tool {tool_name} not found in registry")
+            self.logger.error("Tool %s not found in registry", tool_name)
             return {"error": f"Tool {tool_name} not found"}
             
-        self.logger.info(f"Executing tool {tool_name} with arguments: {arguments}")
+        self.logger.info("Executing tool %s with arguments: %s", tool_name, arguments)
         
+        # TODO: Herausfinden, wie das hier mit einer Parameterbehafteten Funktion funktioniert.
         try:
             if hasattr(tool, "arun"):
-                # arun erwartet entweder ein einzelnes Argument oder ein Dictionary als erstes Argument
-                # Wenn es keine Argumente gibt, rufen wir es ohne auf
                 if not arguments:
-                    result = await tool.arun({})
-                # Wenn es genau ein Argument gibt mit Namen "tool_input"
-                elif "tool_input" in arguments and len(arguments) == 1:
-                    result = await tool.arun(arguments["tool_input"])
-                # Ansonsten übergeben wir das gesamte Dictionary als tool_input
-                else:
-                    result = await tool.arun(arguments)
-            # Für asynchrone invoke-Methode
-            elif asyncio.iscoroutinefunction(getattr(tool, "invoke", None)):
-                result = await tool.invoke(arguments)
-            # Für synchrone Ausführung
-            else:
-                result = tool.invoke(arguments)
+                    return await tool.arun({})
+                if "tool_input" in arguments and len(arguments) == 1:
+                    return await tool.arun(arguments["tool_input"])
                 
-            self.logger.info(f"Tool {tool_name} execution result: {result}")
-            return result
+                return await tool.arun(arguments)
+                    
+            return tool.invoke(arguments)
+        
         except Exception as e:
-            self.logger.error(f"Error executing tool {tool_name}: {e}")
+            self.logger.error("Error executing tool %s: %s", tool_name, e)
             self.logger.error(traceback.format_exc())
             return {"error": str(e)}
 
@@ -460,13 +453,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 }
             }
             
-            self.logger.info(f"Sending function result for call_id {call_id}: {result_str[:100]}...")
+            self.logger.info("Sending function result for call_id %s: %s...", call_id, result_str[:100])
             
             # Send the function result
             await self.connection.send(json.dumps(function_output))
             
         except Exception as e:
-            self.logger.error(f"Error sending function result: {e}")
+            self.logger.error("Error sending function result: %s", e)
             self.logger.error(traceback.format_exc())
 
     async def _create_new_response(self) -> None:
@@ -489,7 +482,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             await self.connection.send(json.dumps(response_create))
             
         except Exception as e:
-            self.logger.error(f"Error creating new response: {e}")
+            self.logger.error("Error creating new response: %s", e)
             self.logger.error(traceback.format_exc())
 
     def _handle_audio_delta(self, response, audio_player: AudioPlayerBase) -> None:
