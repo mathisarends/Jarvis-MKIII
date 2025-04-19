@@ -1,23 +1,19 @@
-
-import asyncio
-from typing import Optional, List
 from langchain.tools import tool
 
 from tools.weather.weather_client import WeatherClient
 
 @tool
-async def get_weather(city: Optional[str] = None) -> str:
+async def get_weather() -> str:
     """
-    Ruft Wetterinformationen für einen bestimmten Standort ab oder verwendet den IP-basierten Standort.
+    Retrieves current weather information based on automatically detected location.
     
-    Args:
-        city: Optional. Name der Stadt für die Wetterabfrage. 
-              Wenn nicht angegeben, wird der Standort über die IP-Adresse ermittelt.
+    The tool uses IP-based geolocation to determine the user's current location
+    and fetches the appropriate weather data. No parameters needed.
     
     Returns:
-        Eine formatierte Wetterzusammenfassung
+        str: A formatted summary of the current weather at the detected location.
     """
-    client = WeatherClient(city=city)
+    client = WeatherClient()
     weather_lines = await client.fetch_weather_data()
-    
+
     return "\n".join(weather_lines)

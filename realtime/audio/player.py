@@ -40,7 +40,7 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
         self.player_thread.daemon = True
         self.player_thread.start()
         self.logger.info("Audio player started with sample rate: %d Hz", RATE)
-        
+
     def clear_queue_and_stop(self):
         """
         Stop the current audio stream immediately and clear the audio queue.

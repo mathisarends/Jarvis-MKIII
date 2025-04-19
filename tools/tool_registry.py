@@ -1,13 +1,11 @@
-import json
 import inspect
 
 from typing import List, Dict, Any, Optional, Callable
 from langchain.tools import BaseTool
+from langchain.tools import tool as langchain_tool
 
 from utils.logging_mixin import LoggingMixin
 from utils.singleton_decorator import singleton
-
-from langchain.tools import tool
 
 
 @singleton
@@ -32,7 +30,9 @@ class ToolRegistry(LoggingMixin):
             ValueError: If a tool with the same name is already registered
         """
         if tool.name in self._tools:
-            raise ValueError(f"A tool with the name '{tool.name}' is already registered.")
+            raise ValueError(
+                f"A tool with the name '{tool.name}' is already registered."
+            )
 
         self._tools[tool.name] = tool
         self.logger.info("Tool '%s' successfully registered.", tool.name)
@@ -49,7 +49,9 @@ class ToolRegistry(LoggingMixin):
         """
         duplicate_names = set(tool.name for tool in tools) & set(self._tools.keys())
         if duplicate_names:
-            raise ValueError(f"The following tool names are already registered: {', '.join(duplicate_names)}")
+            raise ValueError(
+                f"The following tool names are already registered: {', '.join(duplicate_names)}"
+            )
 
         for tool in tools:
             self._tools[tool.name] = tool
@@ -71,7 +73,10 @@ class ToolRegistry(LoggingMixin):
             self.logger.info("Tool '%s' removed from registry.", tool_name)
             return True
 
-        self.logger.warning("Tool '%s' could not be removed because it is not in the registry.", tool_name)
+        self.logger.warning(
+            "Tool '%s' could not be removed because it is not in the registry.",
+            tool_name,
+        )
         return False
 
     def get_tool(self, tool_name: str) -> Optional[BaseTool]:
@@ -104,7 +109,9 @@ class ToolRegistry(LoggingMixin):
         """
         return list(self._tools.values())
 
-    def get_openai_schema(self, tool_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def get_openai_schema(
+        self, tool_names: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Converts registered tools into OpenAI-compatible function schemas.
 
@@ -122,7 +129,9 @@ class ToolRegistry(LoggingMixin):
         else:
             missing_tools = set(tool_names) - set(self._tools.keys())
             if missing_tools:
-                raise ValueError(f"The following tools are not in the registry: {', '.join(missing_tools)}")
+                raise ValueError(
+                    f"The following tools are not in the registry: {', '.join(missing_tools)}"
+                )
 
             tools_to_convert = [self._tools[name] for name in tool_names]
 
@@ -162,7 +171,7 @@ class LangChainToOpenAIConverter(LoggingMixin):
             "type": "function",
             "name": lc_tool.name,
             "description": lc_tool.description or "No description provided.",
-            "parameters": parameters
+            "parameters": parameters,
         }
 
     def convert_tools(self, lc_tools: List[BaseTool]) -> List[Dict[str, Any]]:
@@ -177,85 +186,138 @@ class LangChainToOpenAIConverter(LoggingMixin):
         """
         return [self.convert_tool(tool) for tool in lc_tools]
 
+
     def _extract_parameters(self, lc_tool: BaseTool) -> Dict[str, Any]:
         """
-        Extracts parameters from a LangChain tool.
-
+        Extracts parameters from a LangChain tool with early returns and cleaner structure.
+        
         Args:
             lc_tool: A LangChain tool
-
+            
         Returns:
             Dict: OpenAI-style parameters dictionary
         """
-        parameters = {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-
-        if hasattr(lc_tool, 'args_schema'):
-            try:
-                schema = lc_tool.args_schema.schema()
-                if 'properties' in schema:
-                    parameters['properties'] = {
-                        key: {
-                            **val,
-                            "description": val.get("description", key.replace('_', ' ').capitalize())
-                        } for key, val in schema['properties'].items()
-                    }
-                if 'required' in schema:
-                    parameters['required'] = schema['required']
-            except (AttributeError, TypeError):
-                self.logger.debug("Failed to extract schema from tool '%s', using default.", lc_tool.name)
-
-        elif hasattr(lc_tool, '_run') and callable(lc_tool._run):
-            try:
-                sig = inspect.signature(lc_tool._run)
-                for param_name, param in sig.parameters.items():
-                    if param_name != 'self':
-                        param_type = "string"
-                        if param.annotation != inspect.Parameter.empty:
-                            if param.annotation == str:
-                                param_type = "string"
-                            elif param.annotation in (int, float):
-                                param_type = "number"
-                            elif param.annotation == bool:
-                                param_type = "boolean"
-                            elif param.annotation == dict:
-                                param_type = "object"
-                            elif param.annotation == list:
-                                param_type = "array"
-
-                        parameters['properties'][param_name] = {
-                            "type": param_type,
-                            "description": f"{param_name.replace('_', ' ').capitalize()}"
-                        }
-
-                        if param.default == inspect.Parameter.empty:
-                            parameters['required'].append(param_name)
-            except (AttributeError, TypeError):
-                self.logger.debug("Failed to extract function signature from tool '%s'.", lc_tool.name)
-
+        parameters = {"type": "object", "properties": {}, "required": []}
+        
+        if hasattr(lc_tool, "args_schema"):
+            schema_params = self._extract_from_schema(lc_tool)
+            if schema_params:
+                return schema_params
+        
+        if hasattr(lc_tool, "_run") and callable(lc_tool._run):
+            sig_params = self._extract_from_signature(lc_tool)
+            if sig_params:
+                return sig_params
+        
         return parameters
 
-
-def register_as_tool():
-    """
-    Decorator for automatically registering a function as a tool.
-
-    Args:
-        registry_instance: Optional custom registry, defaults to the singleton instance
-
-    Returns:
-        Callable: Decorator to convert a function to a tool and register it
-    """
-    def decorator(func: Callable):
-
-        tool_instance = tool(func)
+    def _extract_from_schema(self, lc_tool: BaseTool) -> Optional[Dict[str, Any]]:
+        """
+        Extract parameters from a tool's args_schema.
         
-        registry = ToolRegistry()
-        registry.register_tool(tool_instance)
+        Args:
+            lc_tool: A LangChain tool
+            
+        Returns:
+            Optional[Dict]: Parameters dictionary or None if extraction failed
+        """
+        parameters = {"type": "object", "properties": {}, "required": []}
+        
+        try:
+            schema = lc_tool.args_schema.schema()
+            
+            if "properties" in schema:
+                parameters["properties"] = {
+                    key: {
+                        **val,
+                        "description": val.get(
+                            "description", key.replace("_", " ").capitalize()
+                        ),
+                    }
+                    for key, val in schema["properties"].items()
+                }
+                
+            if "required" in schema:
+                parameters["required"] = schema["required"]
+                
+            return parameters
+        except (AttributeError, TypeError):
+            self.logger.debug(
+                "Failed to extract schema from tool '%s'", lc_tool.name
+            )
+            return None
 
-        return tool_instance
+    def _extract_from_signature(self, lc_tool: BaseTool) -> Optional[Dict[str, Any]]:
+        """
+        Extract parameters from a tool's function signature.
+        
+        Args:
+            lc_tool: A LangChain tool
+            
+        Returns:
+            Optional[Dict]: Parameters dictionary or None if extraction failed
+        """
+        parameters = {"type": "object", "properties": {}, "required": []}
+        
+        try:
+            sig = inspect.signature(lc_tool._run)
+            
+            for param_name, param in sig.parameters.items():
+                if param_name == "self":
+                    continue
+                    
+                param_type = self._get_param_type(param.annotation)
+                    
+                parameters["properties"][param_name] = {
+                    "type": param_type,
+                    "description": f"{param_name.replace('_', ' ').capitalize()}",
+                }
+                    
+                if param.default == inspect.Parameter.empty:
+                    parameters["required"].append(param_name)
+                    
+            return parameters
+        except (AttributeError, TypeError):
+            self.logger.debug(
+                "Failed to extract function signature from tool '%s'", lc_tool.name
+            )
+            return None
 
-    return decorator
+    def _get_param_type(self, annotation) -> str:
+        """
+        Determine OpenAI parameter type from Python type annotation.
+
+        Args:
+            annotation: Python type annotation
+
+        Returns:
+            str: Corresponding OpenAI parameter type
+        """
+        if annotation == inspect.Parameter.empty:
+            return "string"
+        if annotation == str:
+            return "string"
+        if annotation in (int, float):
+            return "number"
+        if annotation == bool:
+            return "boolean"
+        if annotation == dict:
+            return "object"
+        if annotation == list:
+            return "array"
+
+        annotation_str = str(annotation)
+        if "typing.Optional" in annotation_str:
+            inner_type = annotation_str.split("[")[1].split("]")[0]
+            if "str" in inner_type:
+                return "string"
+            if "int" in inner_type or "float" in inner_type:
+                return "number"
+            if "bool" in inner_type:
+                return "boolean"
+            if "dict" in inner_type:
+                return "object"
+            if "list" in inner_type:
+                return "array"
+
+        return "string"
