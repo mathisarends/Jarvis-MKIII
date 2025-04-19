@@ -11,30 +11,27 @@ from speech.voice_assistant_controller import VoiceAssistantController
 async def main():
     """Main entry point for the voice assistant application"""
     load_dotenv()
-    
+
     if not os.getenv("OPENAI_API_KEY"):
         print("Error: OPENAI_API_KEY not found in .env file")
         return
-    
+
     if not os.getenv("PICO_ACCESS_KEY"):
         print("Error: PICO_ACCESS_KEY not found in .env file")
         return
-    
+
     setup_logging()
     logger = logging.getLogger("main")
-    
+
     logger.info("Starting voice assistant...")
-    
+
     voice_assistant = VoiceAssistantController(
-        wake_word="jarvis",
-        sensitivity=0.7,
-        inactivity_timeout=7.0,
-        cooldown_period=1.0
+        wake_word="jarvis", sensitivity=0.7, inactivity_timeout=7.0, cooldown_period=1.0
     )
-    
+
     player = PyAudioPlayer()
     player.play_sound("startup")
-    
+
     try:
         await voice_assistant.run()
     except KeyboardInterrupt:
@@ -48,7 +45,7 @@ if __name__ == "__main__":
     print("🎙️  Voice Assistant with Wake Word Detection")
     print("   Say the wake word to start a conversation")
     print("   Press Ctrl+C to exit")
-    
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

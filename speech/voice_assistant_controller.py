@@ -13,11 +13,9 @@ from utils.logging_mixin import LoggingMixin
 
 class AssistantState(Enum):
     """Enumeration of possible assistant states"""
-    IDLE = auto()           # Waiting for wake word
-    LISTENING = auto()      # Actively listening for user input
-    PROCESSING = auto()     # Processing user input, generating response
-    RESPONDING = auto()     # Playing response to user
-    STOPPING = auto()       # Shutting down
+    IDLE = auto()
+    LISTENING = auto()
+    RESPONDING = auto()
 
 
 class VoiceAssistantController(LoggingMixin):
@@ -57,13 +55,14 @@ class VoiceAssistantController(LoggingMixin):
         self.conversation_active = False
         self.should_stop = False
         
+        self._transcript_text = ""
+        
         self.logger.info("Voice Assistant Controller initialized with wake word: %s", wake_word)
     
     async def initialize(self):
         """Initialize all components of the voice assistant"""
         self.logger.info("Initializing voice assistant components...")
         
-        # Initialize wake word listener
         try:
             self.wake_word_listener = WakeWordListener(
                 wakeword=self.wake_word,
@@ -73,7 +72,6 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.error("Failed to initialize wake word listener: %s", e)
             return False
         
-        # Initialize OpenAI API client
         self.openai_api = OpenAIRealtimeAPI()
         
         # Initialize audio components
@@ -150,14 +148,17 @@ class VoiceAssistantController(LoggingMixin):
     
     def _handle_transcript(self, response):
         """Handle transcript responses from OpenAI API"""
-        delta = response.get('delta', '')
+        delta = response.get("delta", "")
         if not delta:
             return
-            
+
         self._register_activity()
+
+        self._transcript_text += delta
         
-        response_id = response.get('response_id', 'unknown')
-        print(f"\n🎤 [{response_id[:8]}]: {delta}", flush=True)
+        # Direkt mit print, ohne newline (Zeilenumbruch)
+        print(f"\rAssistant: {self._transcript_text}", end="", flush=True)
+        
     
     async def run(self):
         """Run the voice assistant main loop"""

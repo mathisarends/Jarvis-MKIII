@@ -95,7 +95,8 @@ class WakeWordListener:
             self.handle.delete()
 
         self.logger.info("✅ Wake-Word-Listener erfolgreich beendet")
-        
+
+
 if __name__ == "__main__":
     listener = WakeWordListener()
     try:
