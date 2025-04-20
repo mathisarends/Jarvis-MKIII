@@ -15,6 +15,11 @@ from realtime.realtime_tool_handler import RealtimeToolHandler
 from realtime.typings import AudioDeltaResponse, OpenAIRealtimeResponse
 from realtime.websocket_manager import WebSocketManager
 from speech.converstation_duration_tracker import ConversationDurationTracker
+from tools.pomodoro.pomodoro_tool import (
+    get_pomodoro_status,
+    start_pomodoro_timer,
+    stop_pomodoro_timer,
+)
 from tools.volume_tool import get_volume_tool, set_volume_tool
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
@@ -68,6 +73,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.tool_registry.register_tool(web_search_tool)
             self.tool_registry.register_tool(set_volume_tool)
             self.tool_registry.register_tool(get_volume_tool)
+            self.tool_registry.register_tool(start_pomodoro_timer)
+            self.tool_registry.register_tool(stop_pomodoro_timer)
+            self.tool_registry.register_tool(get_pomodoro_status)
 
             self.logger.info("All tools successfully registered")
         except Exception as e:
@@ -127,7 +135,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     event_handler=event_handler,
                 ),
             )
-            
+
             return True
         except asyncio.CancelledError:
             self.logger.info("Tasks were cancelled")
@@ -136,7 +144,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
             # Beende den Tracker und protokolliere die Gesamtdauer
             duration = self.duration_tracker.end_conversation()
             self.logger.info(
-                f"Conversation ended. Total duration: {duration}ms ({duration/1000:.2f}s)"
+                "Conversation ended. Total duration: %dms (%.2fs)",
+                duration,
+                duration / 1000,
             )
             await self.ws_manager.close()
 
@@ -345,6 +355,10 @@ class OpenAIRealtimeAPI(LoggingMixin):
         if event_type == "input_audio_buffer.speech_started":
             # Stoppe die Audio-Wiedergabe
             self.audio_player.clear_queue_and_stop()
+            self.ws_manager.send_truncate_message(
+                event_id=self._last_message_event_id,
+                audio_end_ms=self.duration_tracker.current_time_ms,
+            )
 
         if event_type == "response.text.delta" and "delta" in response:
             if handle_text:

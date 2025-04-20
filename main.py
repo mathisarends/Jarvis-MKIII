@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 from dotenv import load_dotenv
 
 from audio.py_audio_player import PyAudioPlayer

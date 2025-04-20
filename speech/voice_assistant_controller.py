@@ -14,6 +14,7 @@ from utils.logging_mixin import LoggingMixin
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
 
+# TODO: Herausfinden, warum ich den hier nicht mehr unterbrechen kann.
 class AssistantState(Enum):
     """Enumeration of possible assistant states"""
 
@@ -73,9 +74,9 @@ class VoiceAssistantController(LoggingMixin):
         self.activity_detected = threading.Event()
         self.conversation_active = False
         self.should_stop = False
-        self.truncation_occurred = False  # Flag for truncation events
-        self.interrupted = False  # Flag to track if user has interrupted
-        self._needs_new_session = False  # Flag for session management
+        self.truncation_occurred = False
+        self.interrupted = False
+        self._needs_new_session = False
 
         self._transcript_text = ""
         self._is_responding = False
@@ -214,7 +215,7 @@ class VoiceAssistantController(LoggingMixin):
         Handle special events from the OpenAI API.
         """
         self.logger.info(f"API EVENT RECEIVED: {event_type}")
-        
+
         if event_type == "input_audio_buffer.speech_started":
             self.logger.info("User speech started - INTERRUPTION DETECTED")
             # Reset transcription when user starts speaking
@@ -222,25 +223,29 @@ class VoiceAssistantController(LoggingMixin):
             self._is_responding = False
             self.state = AssistantState.LISTENING
             self.timeout_manager.handle_speech_started()
-            
+
             # Set interruption flags
             self.truncation_occurred = True
             self.interrupted = True
             self._needs_new_session = True
-            self.logger.info(f"Flags set: truncation={self.truncation_occurred}, interrupted={self.interrupted}")
+            self.logger.info(
+                f"Flags set: truncation={self.truncation_occurred}, interrupted={self.interrupted}"
+            )
 
         elif event_type == "response.done":
             self.logger.info("Response completed event received")
             # Handle response done in timeout manager
             self.timeout_manager.handle_response_done(self._transcript_text)
             self.state = AssistantState.RESPONDING
-            
+
             # IMPORTANT: Don't reset interruption flags if they're set
             # This allows the conversation to continue even after response.done
             if not self.interrupted:
                 self.logger.info("Normal response done (not after interruption)")
             else:
-                self.logger.info("Response done after interruption - keeping conversation active")
+                self.logger.info(
+                    "Response done after interruption - keeping conversation active"
+                )
 
     def _handle_transcript(self, response):
         """
@@ -307,12 +312,14 @@ class VoiceAssistantController(LoggingMixin):
                 done, pending = await asyncio.wait(
                     [inactivity_task, api_task], return_when=asyncio.FIRST_COMPLETED
                 )
-                
-                self.logger.debug(f"Tasks completed: {len(done)}, pending: {len(pending)}")
+
+                self.logger.debug(
+                    f"Tasks completed: {len(done)}, pending: {len(pending)}"
+                )
 
                 # Handle completed tasks
                 should_continue = await self._handle_completed_tasks(done)
-                
+
                 # Break the loop only if the conversation was explicitly ended
                 if not should_continue:
                     self.logger.info("Conversation ending as requested")
@@ -320,13 +327,13 @@ class VoiceAssistantController(LoggingMixin):
 
                 # Cancel pending tasks
                 await self._cancel_pending_tasks(pending)
-                
+
                 # After truncation, continue in listening mode
                 if self.truncation_occurred:
                     self.logger.info("Continuing conversation after truncation")
                     self.truncation_occurred = False
                     self.state = AssistantState.LISTENING
-                
+
                 # Short pause before next iteration
                 await asyncio.sleep(0.1)
 
@@ -373,10 +380,10 @@ class VoiceAssistantController(LoggingMixin):
     async def _handle_completed_tasks(self, done):
         """
         Handle tasks that have completed.
-        
+
         Args:
             done: Set of completed tasks
-                
+
         Returns:
             bool: True if conversation should continue, False if it should end
         """
@@ -390,13 +397,13 @@ class VoiceAssistantController(LoggingMixin):
 
             try:
                 task.result()
-                
+
                 # If inactivity monitor ended, end the conversation
                 if task_name == "Inactivity monitor":
                     self.logger.info("Conversation ended due to inactivity")
                     self.conversation_active = False
                     return False
-                    
+
             except (asyncio.CancelledError, websockets.exceptions.ConnectionClosedOK):
                 self.logger.info("%s ended normally", task_name)
                 # The critical change: For a truncation (interruption)
@@ -408,15 +415,15 @@ class VoiceAssistantController(LoggingMixin):
                 self.logger.error(
                     "Error in %s: %s - %s", task_name, type(e).__name__, e
                 )
-                
+
         # If conversation was explicitly ended
         if not self.conversation_active:
             return False
-            
+
         # The critical change: For API task end AND truncation, continue conversation
         if task_name == "API task" and self.truncation_occurred:
             return True
-            
+
         # For unexpected conditions or API task end without truncation
         # (normal end of the API task), end the conversation
         return False
@@ -496,7 +503,7 @@ class ConversationTimeoutManager(LoggingMixin):
     def register_activity(self):
         """Register activity to reset inactivity timer"""
         self.last_activity_time = time.time()
-        
+
         # Reset user_speech_active flag when in LISTENING state
         # This ensures the flag is properly reset after speech ends
         if self.state == AssistantState.LISTENING:
@@ -591,7 +598,7 @@ class ConversationTimeoutManager(LoggingMixin):
             # Case 3a: Response is done, check if expected speaking time has elapsed
             if self._response_done:
                 time_left = self._expected_response_end_time - current_time
-                
+
                 self.logger.debug(
                     "Current time: %.2f, Expected end time: %.2f, Time left: %.2f seconds",
                     current_time,
