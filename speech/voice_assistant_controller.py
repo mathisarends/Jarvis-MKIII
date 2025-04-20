@@ -5,8 +5,8 @@ import time
 import traceback
 import websockets
 
-from realtime.audio.microphone import PyAudioMicrophone
-from realtime.audio.py_audio_player import PyAudioPlayer
+from audio.microphone import PyAudioMicrophone
+from audio.audio_player_factory import AudioPlayerFactory
 from realtime.realtime_api import OpenAIRealtimeAPI
 from speech.wake_word_listener import WakeWordListener
 
@@ -67,7 +67,7 @@ class VoiceAssistantController(LoggingMixin):
         self.wake_word_listener = None
         self.openai_api = None
         self.mic_stream = None
-        self.audio_player = None
+        self.audio_player = AudioPlayerFactory.get_shared_instance()
 
         self.state = AssistantState.IDLE
         self.activity_detected = threading.Event()
@@ -103,7 +103,6 @@ class VoiceAssistantController(LoggingMixin):
 
         # Initialize audio components
         self.mic_stream = PyAudioMicrophone()
-        self.audio_player = PyAudioPlayer()
 
         self.logger.info("Voice assistant components initialized successfully")
         return True

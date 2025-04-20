@@ -3,8 +3,8 @@ from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from realtime.audio.py_audio_player import PyAudioPlayer
-
+from audio.py_audio_player import PyAudioPlayer
+from audio.audio_player_factory import AudioPlayerFactory
 
 @tool
 async def set_volume_tool(volume_instruction: str) -> str:
@@ -55,7 +55,7 @@ async def set_volume_tool(volume_instruction: str) -> str:
 
     try:
         # Get the current volume for relative adjustments (used by the LLM)
-        audio_player = PyAudioPlayer()
+        audio_player = AudioPlayerFactory.get_shared_instance()
         current_volume = audio_player.get_volume_level()
 
         human_prompt += f"\nAktuelle Lautstärke: {current_volume:.2f}"

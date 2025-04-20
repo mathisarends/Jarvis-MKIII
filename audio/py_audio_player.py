@@ -9,8 +9,8 @@ import numpy as np
 import pyaudio
 import pygame
 
+from audio.audio_player_base import AudioPlayer
 from realtime.config import FORMAT, CHANNELS, CHUNK, RATE
-from realtime.audio.audio_player_base import AudioPlayer
 from utils.logging_mixin import LoggingMixin
 from utils.singleton_decorator import singleton
 

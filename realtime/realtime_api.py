@@ -4,8 +4,8 @@ import asyncio
 from typing import Optional, Callable, Dict, Any, List, cast
 import websockets
 
-from realtime.audio.audio_player_base import AudioPlayer
-from realtime.audio.microphone import PyAudioMicrophone
+from audio.audio_player_base import AudioPlayer
+from audio.microphone import PyAudioMicrophone
 from realtime.config import (
     OPENAI_WEBSOCKET_URL,
     OPENAI_HEADERS,
