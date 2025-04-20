@@ -6,7 +6,6 @@ from typing import Optional, Callable, Dict, Any, List, cast
 import websockets
 
 from realtime.audio.base import AudioPlayerBase
-
 from realtime.audio.microphone import PyAudioMicrophone
 from realtime.config import (
     OPENAI_WEBSOCKET_URL,
@@ -28,6 +27,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
     """
     Class for managing OpenAI Realtime API connections and communications.
     With Tool-Registry integration.
+
+    This class handles all the interaction with the OpenAI API including:
+    - Establishing and maintaining WebSocket connections
+    - Sending audio data from the microphone
+    - Processing responses including text, audio and tool calls
+    - Gracefully handling connection closures
     """
 
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
@@ -119,10 +124,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except asyncio.CancelledError:
             self.logger.info("Tasks were cancelled")
             return True
-        except Exception as e:
-            self.logger.error("Error in main loop: %s", e)
-            self.logger.error(traceback.format_exc())
-            return False
         finally:
             await self.close()
 
@@ -149,7 +150,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.error("OS-level connection error: %s", e)
 
     async def initialize_session(self) -> bool:
-        """Initialize a session with the OpenAI API."""
+        """
+        Initialize a session with the OpenAI API.
+
+        Returns:
+            True if session was successfully initialized, False otherwise
+        """
         if not self.connection:
             self.logger.error(self.NO_CONNECTION_ERROR_MSG)
             return False
@@ -193,6 +199,11 @@ class OpenAIRealtimeAPI(LoggingMixin):
             audio_chunks_sent = 0
 
             while mic_stream.is_active:
+                # Check if connection is still open
+                if not self.connection or self.connection.closed:
+                    self.logger.info("Connection closed, stopping audio transmission")
+                    break
+
                 data = mic_stream.read_chunk()
                 if not data:
                     await asyncio.sleep(0.01)
@@ -205,18 +216,32 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     "audio": base64_audio,
                 }
 
-                await self.connection.send(json.dumps(audio_append))
-                audio_chunks_sent += 1
+                # Check connection before sending
+                if not self.connection.closed:
+                    await self.connection.send(json.dumps(audio_append))
+                    audio_chunks_sent += 1
 
-                if audio_chunks_sent % 100 == 0:
-                    self.logger.debug("Audio chunks sent: %d", audio_chunks_sent)
+                    if audio_chunks_sent % 100 == 0:
+                        self.logger.debug("Audio chunks sent: %d", audio_chunks_sent)
+                else:
+                    self.logger.info("Connection closed, stopping audio transmission")
+                    break
 
                 await asyncio.sleep(0.01)
 
+        except websockets.exceptions.ConnectionClosedOK:
+            # Normal connection closure
+            self.logger.info("WebSocket connection closed normally during audio send")
         except websockets.exceptions.ConnectionClosedError as e:
-            self.logger.error(
-                "WebSocket connection closed unexpectedly during audio send: %s", e
-            )
+            if str(e).startswith("sent 1000 (OK)"):
+                # Also normal behavior
+                self.logger.info(
+                    "WebSocket connection closed normally during audio send"
+                )
+            else:
+                self.logger.error(
+                    "WebSocket connection closed unexpectedly during audio send: %s", e
+                )
         except asyncio.TimeoutError as e:
             self.logger.error("Timeout while sending audio: %s", e)
 
@@ -245,15 +270,29 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     message, audio_player, handle_text, handle_transcript
                 )
 
-        except websockets.exceptions.ConnectionClosedError as e:
-            self.logger.error(
-                "WebSocket connection closed while waiting for responses: %s", e
+        except websockets.exceptions.ConnectionClosedOK:
+            # Normal connection closure
+            self.logger.info(
+                "WebSocket connection closed normally during response processing"
             )
+        except websockets.exceptions.ConnectionClosedError as e:
+            if str(e).startswith("sent 1000 (OK)"):
+                # Also normal behavior
+                self.logger.info(
+                    "WebSocket connection closed normally during response processing"
+                )
+            else:
+                self.logger.error(
+                    "WebSocket connection closed unexpectedly while waiting for responses: %s",
+                    e,
+                )
         except asyncio.TimeoutError as e:
             self.logger.error("Timeout while receiving responses: %s", e)
 
     async def close(self) -> None:
-        """Close the connection"""
+        """
+        Close the WebSocket connection gracefully.
+        """
         if not self.connection:
             return
 
@@ -269,7 +308,15 @@ class OpenAIRealtimeAPI(LoggingMixin):
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
     ) -> None:
-        """Process a single message from the API stream"""
+        """
+        Process a single message from the API stream.
+
+        Args:
+            message: The raw message string received from the API
+            audio_player: An AudioPlayer object for audio playback
+            handle_text: Optional function to handle text responses
+            handle_transcript: Optional function to handle transcript responses
+        """
         try:
             self.logger.debug("Raw message received: %s...", message[:100])
 
@@ -289,7 +336,15 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.warning("Expected key missing in message: %s", e)
 
     def _parse_response(self, message: str) -> Optional[Dict[str, Any]]:
-        """Parse JSON response and validate it's a dictionary"""
+        """
+        Parse JSON response and validate it's a dictionary.
+
+        Args:
+            message: The raw message string received from the API
+
+        Returns:
+            Parsed dictionary or None if parsing failed
+        """
         try:
             response = json.loads(message)
 
@@ -314,7 +369,16 @@ class OpenAIRealtimeAPI(LoggingMixin):
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
     ) -> None:
-        """Route the event to the appropriate handler based on event type"""
+        """
+        Route the event to the appropriate handler based on event type.
+
+        Args:
+            event_type: The type of event from the response
+            response: The full response object
+            audio_player: An AudioPlayer object for audio playback
+            handle_text: Optional function to handle text responses
+            handle_transcript: Optional function to handle transcript responses
+        """
 
         if event_type == "input_audio_buffer.speech_started":
             audio_player.clear_queue_and_stop()
@@ -345,7 +409,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
     def _handle_audio_delta(
         self, response: OpenAIRealtimeResponse, audio_player: AudioPlayerBase
     ) -> None:
-        """Handle audio responses from OpenAI API"""
+        """
+        Handle audio responses from OpenAI API.
+
+        Args:
+            response: The response containing audio data
+            audio_player: An AudioPlayer object for audio playback
+        """
         if response["type"] != "response.audio.delta":
             return
 
