@@ -30,10 +30,10 @@ class VoiceAssistantController(LoggingMixin):
     managing the conversation lifecycle including:
     - Wake word detection
     - Managing conversation state
-    - Handling user inactivity
     - Processing conversation responses
     - Providing a continuous listening loop
-    - Estimating speech duration to allow proper time for responses
+
+    Timeout and duration estimation logic is handled by ConversationTimeoutManager.
     """
 
     def __init__(
@@ -42,7 +42,7 @@ class VoiceAssistantController(LoggingMixin):
         sensitivity=0.8,
         initial_wait=5.0,
         post_response_wait=7.0,
-        cooldown_period=1.0,
+        language="de",
     ):
         """
         Initialize the voice assistant controller.
@@ -52,16 +52,17 @@ class VoiceAssistantController(LoggingMixin):
             sensitivity: Sensitivity for wake word detection (0.0-1.0)
             initial_wait: Seconds to wait initially after wake word before timing out
             post_response_wait: Additional seconds to wait after estimated response time
-            cooldown_period: Seconds to wait after finishing a conversation
             language: Language code for speech duration estimation
         """
         self.wake_word = wake_word
         self.sensitivity = sensitivity
-        self.initial_wait = initial_wait  # Renamed parameter
-        self.post_response_wait = post_response_wait
-        self.cooldown_period = cooldown_period
 
-        self.speech_estimator = SpeechDurationEstimator(language="de")
+        # Create the timeout manager with our settings
+        self.timeout_manager = ConversationTimeoutManager(
+            initial_wait=initial_wait,
+            post_response_wait=post_response_wait,
+            language=language,
+        )
 
         self.wake_word_listener = None
         self.openai_api = None
@@ -69,18 +70,13 @@ class VoiceAssistantController(LoggingMixin):
         self.audio_player = None
 
         self.state = AssistantState.IDLE
-        self.last_activity_time = 0
         self.activity_detected = threading.Event()
         self.conversation_active = False
         self.should_stop = False
 
         self._transcript_text = ""
-        self._response_done = False
-        self._expected_response_end_time = 0
-        
-        self._response_started_at = 0
         self._is_responding = False
-        self._user_speech_active = False  # New flag to track if user is actively speaking
+        self._response_started_at = 0
 
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
@@ -89,7 +85,7 @@ class VoiceAssistantController(LoggingMixin):
     async def initialize(self):
         """
         Initialize all components of the voice assistant.
-        
+
         Returns:
             True if initialization was successful, False otherwise
         """
@@ -117,13 +113,13 @@ class VoiceAssistantController(LoggingMixin):
         Update the last activity timestamp and set activity event.
         Called whenever user or assistant activity is detected.
         """
-        self.last_activity_time = time.time()
+        self.timeout_manager.register_activity()
         self.activity_detected.set()
 
     def speech_activity_handler(self, response):
         """
         Handler for speech activity events from OpenAI API.
-        
+
         Args:
             response: The event response from the API
         """
@@ -135,15 +131,13 @@ class VoiceAssistantController(LoggingMixin):
         ]:
             self._register_activity()
             self.state = AssistantState.LISTENING
-            self._user_speech_active = True  # Set flag that user is speaking
-            self._had_speech_activity = True  # Mark that we've had speech in this conversation
-            self.logger.debug("Speech activity detected, set state to LISTENING")
+            self.timeout_manager.handle_speech_started()
 
         elif event_type in ["response.text.delta", "response.audio.delta"]:
             self._register_activity()
             self.state = AssistantState.RESPONDING
-            self.logger.debug("Response delta received, set state to RESPONDING")
-            
+            self.timeout_manager.handle_response_delta()
+
             # If this is the first response chunk, note the start time
             if not self._is_responding:
                 self._is_responding = True
@@ -152,7 +146,7 @@ class VoiceAssistantController(LoggingMixin):
     def _handle_api_event(self, event_type: str):
         """
         Handle special events from the OpenAI API.
-        
+
         Args:
             event_type: The type of event
             response: The full response object
@@ -162,129 +156,31 @@ class VoiceAssistantController(LoggingMixin):
             # Reset transcription when user starts speaking
             self._transcript_text = ""
             self._is_responding = False
-            self._user_speech_active = True  # Set flag that user is speaking
-            self._had_speech_activity = True  # Mark that we've had speech in this conversation
             self.state = AssistantState.LISTENING
-            
+            self.timeout_manager.handle_speech_started()
+
         elif event_type == "response.done":
             self.logger.info("Response completed event received")
-            self._response_done = True
-            # Don't set _user_speech_active to False here
-            # We want to keep track that speech happened in this conversation
-            
-            # Update the expected response end time based on the transcript
-            if self._transcript_text:
-                # Calculate speech duration estimate
-                estimated_duration = self.speech_estimator.estimate_duration(self._transcript_text)
-                
-                # Add buffer time for speech synthesis and playback
-                total_response_time = estimated_duration + self.post_response_wait
-                
-                # Set the expected end time (from now)
-                self._expected_response_end_time = time.time() + total_response_time
-                
-                self.logger.info(
-                    "Response transcript: '%s'", self._transcript_text
-                )
-                self.logger.info(
-                    "Estimated speech duration: %.2f seconds + %.2f buffer = %.2f seconds total", 
-                    estimated_duration, 
-                    self.post_response_wait,
-                    total_response_time
-                )
-                
-                # Ensure we're in RESPONDING state for the inactivity monitor
-                self.state = AssistantState.RESPONDING
-            else:
-                # If no transcript, use a minimal default time
-                self._expected_response_end_time = time.time() + self.post_response_wait
-                self.logger.info(
-                    "No transcript available, using minimum wait time: %.2f seconds", 
-                    self.post_response_wait
-                )
-                # Ensure we're in RESPONDING state for the inactivity monitor
-                self.state = AssistantState.RESPONDING
+            # Handle response done in timeout manager
+            self.timeout_manager.handle_response_done(self._transcript_text)
+            # Ensure we're in RESPONDING state
+            self.state = AssistantState.RESPONDING
 
     async def _monitor_inactivity(self):
         """
         Monitor for inactivity to determine when to stop listening.
-        New logic:
-        - When user is speaking, no timeout is applied
-        - If user never spoke and no activity for initial_wait period, end conversation
-        - If user already spoke in this conversation, don't time out in LISTENING state
-        - After response.done, wait for estimated speech duration + buffer
+        Uses the timeout manager to determine if the conversation should timeout.
         """
         while self.conversation_active and not self.should_stop:
-            current_time = time.time()
-            
-            # Different logic based on current state
-            if self.state == AssistantState.LISTENING:
-                if self._user_speech_active:
-                    # If user is actively speaking, do nothing - let them speak indefinitely
-                    pass
-                elif not self._had_speech_activity:
-                    # Only apply timeout if we've never detected speech in this conversation
-                    # (This handles cases where wake word is detected but no speech follows)
-                    elapsed = current_time - self.last_activity_time
-                    if elapsed > self.initial_wait:
-                        self.logger.info(
-                            "No speech detected for %s seconds after wake word, ending listening mode", 
-                            self.initial_wait
-                        )
-                        self.conversation_active = False
-                        break
-                # If speech happened at some point but not active now, keep listening without timeout
-                    
-            elif self.state == AssistantState.RESPONDING:
-                # If we've received the response.done event
-                if self._response_done:
-                    # Log the current time and expected end time for debugging
-                    self.logger.debug(
-                        "Current time: %.2f, Expected end time: %.2f, Difference: %.2f seconds",
-                        current_time, 
-                        self._expected_response_end_time,
-                        self._expected_response_end_time - current_time
-                    )
-                    
-                    # Check if we've waited long enough for the speech to be spoken
-                    if current_time >= self._expected_response_end_time:
-                        self.logger.info(
-                            "Response completion timeout reached after estimated speech duration"
-                        )
-                        self.conversation_active = False
-                        break
-                # If still generating response but no activity for a while
-                elif current_time - self.last_activity_time > self.initial_wait * 2:
-                    self.logger.info(
-                        "Response generation timeout (%ss) reached",
-                        self.initial_wait * 2
-                    )
-                    self.conversation_active = False
-                    break
-            else:
-                self.logger.debug("Current state: %s", self.state)
+            # Check with timeout manager if we should timeout
+            should_timeout, reason = self.timeout_manager.should_timeout()
 
-            await asyncio.sleep(0.1)
-                    
-            if self.state == AssistantState.RESPONDING:
-                # If we've received the response.done event
-                if self._response_done:
-                    # Check if we've waited long enough for the speech to be spoken
-                    if current_time >= self._expected_response_end_time:
-                        self.logger.info(
-                            "Response completion timeout reached after estimated speech duration"
-                        )
-                        self.conversation_active = False
-                        break
-                # If still generating response but no activity for a while
-                elif current_time - self.last_activity_time > self.initial_wait * 2:
-                    self.logger.info(
-                        "Response generation timeout (%ss) reached",
-                        self.initial_wait * 2
-                    )
-                    self.conversation_active = False
-                    break
+            if should_timeout:
+                self.logger.info(reason)
+                self.conversation_active = False
+                break
 
+            # Small sleep to prevent CPU thrashing
             await asyncio.sleep(0.1)
 
     async def _handle_conversation(self):
@@ -294,15 +190,14 @@ class VoiceAssistantController(LoggingMixin):
         """
         self.logger.info("Wake word detected! Starting conversation...")
         self.conversation_active = True
-        self.last_activity_time = time.time()
         self.state = AssistantState.LISTENING
-        
+
         # Reset conversation state
         self._transcript_text = ""
-        self._response_done = False
         self._is_responding = False
-        self._user_speech_active = False
-        self._had_speech_activity = False  # New flag to track if we've had any speech in this conversation
+
+        # Reset the timeout manager
+        self.timeout_manager.reset()
 
         # Start audio components
         self.mic_stream.start_stream()
@@ -311,26 +206,27 @@ class VoiceAssistantController(LoggingMixin):
         try:
             # Run inactivity monitor and API tasks concurrently
             inactivity_task = asyncio.create_task(self._monitor_inactivity())
-            api_task = asyncio.create_task(self.openai_api.setup_and_run(
-                self.mic_stream,
-                self.audio_player,
-                handle_transcript=self._handle_transcript,
-                event_handler=self._handle_api_event,
-            ))
-            
+            api_task = asyncio.create_task(
+                self.openai_api.setup_and_run(
+                    self.mic_stream,
+                    self.audio_player,
+                    handle_transcript=self._handle_transcript,
+                    event_handler=self._handle_api_event,
+                )
+            )
+
             # Wait for any task to complete
             done, pending = await asyncio.wait(
-                [inactivity_task, api_task], 
-                return_when=asyncio.FIRST_COMPLETED
+                [inactivity_task, api_task], return_when=asyncio.FIRST_COMPLETED
             )
-            
+
             # Check which task completed and log appropriate information
             for completed_task in done:
                 if completed_task == inactivity_task:
                     self.logger.info("Conversation ended due to inactivity")
                 elif completed_task == api_task:
                     self.logger.info("API task completed naturally")
-                
+
                 # Check for exceptions in completed tasks
                 try:
                     completed_task.result()
@@ -341,8 +237,10 @@ class VoiceAssistantController(LoggingMixin):
                 except websockets.exceptions.ConnectionClosedError as e:
                     self.logger.warning("WebSocket connection closed with error: %s", e)
                 except Exception as e:
-                    self.logger.error("Error in completed task: %s - %s", type(e).__name__, e)
-            
+                    self.logger.error(
+                        "Error in completed task: %s - %s", type(e).__name__, e
+                    )
+
             # Cancel remaining tasks gracefully
             for task in pending:
                 task.cancel()
@@ -351,7 +249,9 @@ class VoiceAssistantController(LoggingMixin):
                 except asyncio.CancelledError:
                     self.logger.debug("Successfully cancelled pending task")
                 except Exception as e:
-                    self.logger.warning("Error while cancelling task: %s - %s", type(e).__name__, e)
+                    self.logger.warning(
+                        "Error while cancelling task: %s - %s", type(e).__name__, e
+                    )
 
         # Handle specific exceptions with more detailed information
         except asyncio.CancelledError:
@@ -362,7 +262,9 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.error("OS error during conversation: %s", e)
         except Exception as e:
             # Still have a catch-all, but with better type information
-            self.logger.error("Unexpected error during conversation: %s - %s", type(e).__name__, e)
+            self.logger.error(
+                "Unexpected error during conversation: %s - %s", type(e).__name__, e
+            )
             self.logger.debug(traceback.format_exc())
         finally:
             # Clean up resources
@@ -372,17 +274,12 @@ class VoiceAssistantController(LoggingMixin):
             self.state = AssistantState.IDLE
             self.conversation_active = False
 
-            self.logger.info(
-                "Conversation ended, cooldown for %s seconds...", self.cooldown_period
-            )
-            await asyncio.sleep(self.cooldown_period)
-            
             self.logger.info("Returning to wake word listening mode")
 
     def _handle_transcript(self, response):
         """
         Handle transcript responses from OpenAI API.
-        
+
         Args:
             response: The transcript response from the API
         """
@@ -431,7 +328,7 @@ class VoiceAssistantController(LoggingMixin):
     async def _listen_for_wake_word_async(self):
         """
         Listen for wake word in a way that doesn't block the event loop.
-        
+
         Returns:
             True if wake word was detected, False otherwise
         """
@@ -462,7 +359,7 @@ class VoiceAssistantController(LoggingMixin):
             self.audio_player.stop()
 
         self.logger.info("Voice assistant stopped")
-        
+
     async def stop_current_conversation(self):
         """
         Stop the current conversation and return to wake word listening mode.
@@ -471,3 +368,158 @@ class VoiceAssistantController(LoggingMixin):
         if self.state != AssistantState.IDLE:
             self.logger.info("Manually stopping current conversation")
             self.conversation_active = False
+
+class ConversationTimeoutManager(LoggingMixin):
+    """
+    Manages the timeout logic for voice assistant conversations.
+
+    This class handles:
+    - Initial wait timeout for when wake word is detected but no speech follows
+    - Unlimited listening time when user is actively speaking
+    - Estimated response duration calculation and timeout
+    - Response generation timeout
+    """
+
+    def __init__(
+        self,
+        initial_wait=5.0,
+        post_response_wait=7.0,
+        language="de",
+    ):
+        """
+        Initialize the conversation timeout manager.
+
+        Args:
+            initial_wait: Seconds to wait initially after wake word before timing out
+            post_response_wait: Additional seconds to wait after estimated response time
+            language: Language code for speech duration estimation
+            logger: Optional logger instance to use (will create one if not provided)
+        """
+        self.initial_wait = initial_wait
+        self.post_response_wait = post_response_wait
+
+        self.speech_estimator = SpeechDurationEstimator(language=language)
+
+        self.state = AssistantState.IDLE
+        self.last_activity_time = 0
+        self._had_speech_activity = False
+        self._user_speech_active = False
+        self._response_done = False
+        self._expected_response_end_time = 0
+
+    def reset(self):
+        """Reset the manager for a new conversation"""
+        self.state = AssistantState.LISTENING
+        self.last_activity_time = time.time()
+        self._had_speech_activity = False
+        self._user_speech_active = False
+        self._response_done = False
+        self._expected_response_end_time = 0
+
+    def register_activity(self):
+        """Register activity to reset inactivity timer"""
+        self.last_activity_time = time.time()
+
+    def handle_speech_started(self):
+        """Handle speech started event"""
+        self.register_activity()
+        self.state = AssistantState.LISTENING
+        self._user_speech_active = True
+        self._had_speech_activity = True
+        self.logger.debug("Speech activity detected, set state to LISTENING")
+
+    def handle_response_delta(self):
+        """Handle response delta event"""
+        self.register_activity()
+        self.state = AssistantState.RESPONDING
+
+    def handle_response_done(self, transcript_text):
+        """
+        Handle response done event
+
+        Args:
+            transcript_text: The transcript text to use for duration estimation
+
+        Returns:
+            float: The expected end time timestamp
+        """
+        self._response_done = True
+
+        # Update the expected response end time based on the transcript
+        if transcript_text:
+            # Calculate speech duration estimate
+            estimated_duration = self.speech_estimator.estimate_duration(
+                transcript_text
+            )
+
+            # Add buffer time for speech synthesis and playback
+            total_response_time = estimated_duration + self.post_response_wait
+
+            # Set the expected end time (from now)
+            self._expected_response_end_time = time.time() + total_response_time
+
+            self.logger.info("Response transcript: '%s'", transcript_text)
+            self.logger.info(
+                "Estimated speech duration: %.2f seconds + %.2f buffer = %.2f seconds total",
+                estimated_duration,
+                self.post_response_wait,
+                total_response_time,
+            )
+        else:
+            self._expected_response_end_time = time.time() + self.post_response_wait
+            self.logger.info(
+                "No transcript available, using minimum wait time: %.2f seconds",
+                self.post_response_wait,
+            )
+
+        self.state = AssistantState.RESPONDING
+
+        return self._expected_response_end_time
+
+    def should_timeout(self):
+        """
+        Check if the conversation should time out based on current state and conditions.
+
+        Returns:
+            tuple: (bool, str) - (should_timeout, reason)
+        """
+        current_time = time.time()
+
+        # Different logic based on current state
+        if self.state == AssistantState.LISTENING:
+            if self._user_speech_active:
+                # If user is actively speaking, don't time out
+                return False, ""
+            elif not self._had_speech_activity:
+                # Only apply timeout if we've never detected speech in this conversation
+                elapsed = current_time - self.last_activity_time
+                if elapsed > self.initial_wait:
+                    reason = f"No speech detected for {self.initial_wait} seconds after wake word"
+                    return True, reason
+            # If speech happened at some point but not active now, keep listening
+            return False, ""
+
+        elif self.state == AssistantState.RESPONDING:
+            # If we've received the response.done event
+            if self._response_done:
+                # Log the current time and expected end time for debugging
+                self.logger.debug(
+                    "Current time: %.2f, Expected end time: %.2f, Difference: %.2f seconds",
+                    current_time,
+                    self._expected_response_end_time,
+                    self._expected_response_end_time - current_time,
+                )
+
+                # Check if we've waited long enough for the speech to be spoken
+                if current_time >= self._expected_response_end_time:
+                    reason = "Response completion timeout reached after estimated speech duration"
+                    return True, reason
+            # If still generating response but no activity for a while
+            elif current_time - self.last_activity_time > self.initial_wait * 2:
+                reason = (
+                    f"Response generation timeout ({self.initial_wait * 2}s) reached"
+                )
+                return True, reason
+
+        # Default: don't time out
+        return False, ""
