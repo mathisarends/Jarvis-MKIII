@@ -1,8 +1,9 @@
 import pyaudio
 from realtime.config import FORMAT, CHANNELS, RATE, CHUNK
+from utils.logging_mixin import LoggingMixin
 
 
-class PyAudioMicrophone:
+class PyAudioMicrophone(LoggingMixin):
     """PyAudio implementation of the MicrophoneBase class"""
 
     def __init__(self):
@@ -25,7 +26,7 @@ class PyAudioMicrophone:
         )
         self.is_active = True
         self.audio_data = []
-        print("Microphone stream started")
+        self.logger.info("Microphone stream started")
 
     def stop_stream(self):
         """Stop the microphone stream"""
@@ -34,7 +35,7 @@ class PyAudioMicrophone:
             self.stream.close()
             self.stream = None
         self.is_active = False
-        print("Microphone stream stopped")
+        self.logger.info("Microphone stream stopped")
 
     def read_chunk(self):
         """Read a chunk of audio data from the microphone"""

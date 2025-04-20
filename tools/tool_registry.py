@@ -109,32 +109,14 @@ class ToolRegistry(LoggingMixin):
         """
         return list(self._tools.values())
 
-    def get_openai_schema(
-        self, tool_names: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+    def get_openai_schema(self) -> List[Dict[str, Any]]:
         """
         Converts registered tools into OpenAI-compatible function schemas.
 
-        Args:
-            tool_names: Optional; if provided, only convert tools with these names
-
         Returns:
             List[Dict]: A list of OpenAI function schemas
-
-        Raises:
-            ValueError: If any of the specified tools are not found in the registry
         """
-        if tool_names is None:
-            tools_to_convert = self.get_all_tools()
-        else:
-            missing_tools = set(tool_names) - set(self._tools.keys())
-            if missing_tools:
-                raise ValueError(
-                    f"The following tools are not in the registry: {', '.join(missing_tools)}"
-                )
-
-            tools_to_convert = [self._tools[name] for name in tool_names]
-
+        tools_to_convert = self.get_all_tools()
         return self._converter.convert_tools(tools_to_convert)
 
     def has_tool(self, tool_name: str) -> bool:
