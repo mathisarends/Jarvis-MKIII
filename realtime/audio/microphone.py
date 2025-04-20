@@ -1,9 +1,8 @@
 import pyaudio
-from realtime.audio.base import MicrophoneBase
 from realtime.config import FORMAT, CHANNELS, RATE, CHUNK
 
 
-class PyAudioMicrophone(MicrophoneBase):
+class PyAudioMicrophone:
     """PyAudio implementation of the MicrophoneBase class"""
 
     def __init__(self):

@@ -1,9 +1,14 @@
 import json
 from json import JSONDecodeError
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
+from websockets.legacy.client import WebSocketClientProtocol
+
+from langchain_core.tools import BaseTool
 
 from utils.logging_mixin import LoggingMixin
 from tools.tool_registry import ToolRegistry
+
+from realtime.typings import DoneResponseWithToolCall, FunctionCallItem
 
 
 class RealtimeToolHandler(LoggingMixin):
@@ -13,62 +18,40 @@ class RealtimeToolHandler(LoggingMixin):
     """
 
     def __init__(self, tool_registry: ToolRegistry):
-        """
-        Initialize the RealtimeToolHandler with a tool registry.
-
-        Args:
-            tool_registry: Registry containing all available tools
-        """
         self.tool_registry = tool_registry
 
     async def handle_function_call_in_response(
-        self, response: Dict[str, Any], connection
+        self, response: DoneResponseWithToolCall, connection: WebSocketClientProtocol
     ) -> None:
         """
-        Process function calls found in an API response and handle them.
+        Process function calls found in a 'response.done' API response.
 
         Args:
-            response: The API response dictionary containing function calls
+            response: The typed API response containing function calls
             connection: WebSocket connection to send results back
         """
         if not connection:
             self.logger.error("No connection available.")
             return
 
-        output = response.get("response", {}).get("output", [])
-        if not isinstance(output, list):
-            self.logger.warning("Expected 'output' to be a list, got: %s", type(output))
-            return
+        output: List[FunctionCallItem] = response["response"].get("output", [])
 
         for item in output:
-            if not isinstance(item, dict):
-                self.logger.warning(
-                    "Expected item in output to be a dict, got: %s", type(item)
-                )
-                continue
-            if item.get("type") == "function_call":
-                await self.process_function_call(item, connection)
+            await self.process_function_call(item, connection)
 
     async def process_function_call(
-        self, function_call_item: Dict[str, Any], connection
+        self, function_call_item: FunctionCallItem, connection: WebSocketClientProtocol
     ) -> None:
         """
         Process a single function call item and execute the corresponding tool.
 
         Args:
-            function_call_item: Dictionary containing function call details
+            function_call_item: Typed function call data
             connection: WebSocket connection to send results back
         """
-        function_name = function_call_item.get("name")
-        call_id = function_call_item.get("call_id")
+        function_name = function_call_item["name"]
+        call_id = function_call_item["call_id"]
         arguments_str = function_call_item.get("arguments", "{}")
-        print("arguments_str", arguments_str)
-
-        if not function_name or not call_id:
-            self.logger.error(
-                "Function name or call_id is missing in the function call."
-            )
-            return
 
         self.logger.info(
             "Processing function call: %s with call_id: %s", function_name, call_id
@@ -86,14 +69,14 @@ class RealtimeToolHandler(LoggingMixin):
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
-        Execute a tool with the provided arguments.
+        Execute the registered tool by name with given arguments.
 
         Args:
-            tool_name: The name of the tool to execute
-            arguments: Dictionary of arguments to pass to the tool
+            tool_name: Name of the tool as registered in the registry.
+            arguments: Arguments passed to the tool.
 
         Returns:
-            The result of the tool execution or an error dict if execution fails
+            Result of the tool execution, or error information.
         """
         tool = self.tool_registry.get_tool(tool_name)
         if not tool:
@@ -108,59 +91,45 @@ class RealtimeToolHandler(LoggingMixin):
                 "Tool %s execution result: %s", tool_name, self._truncate_result(result)
             )
             return result
-        except AttributeError as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
             self.logger.error(
-                "Attribute error executing tool %s: %s", tool_name, e, exc_info=True
+                "Error executing tool %s: %s", tool_name, e, exc_info=True
             )
-            return {"error": f"Tool configuration error: {str(e)}"}
-        except TypeError as e:
-            self.logger.error(
-                "Type error executing tool %s: %s", tool_name, e, exc_info=True
-            )
-            return {"error": f"Invalid argument type: {str(e)}"}
-        except ValueError as e:
-            self.logger.error(
-                "Value error executing tool %s: %s", tool_name, e, exc_info=True
-            )
-            return {"error": f"Invalid value in arguments: {str(e)}"}
-        except KeyError as e:
-            self.logger.error(
-                "Key error executing tool %s: %s", tool_name, e, exc_info=True
-            )
-            return {"error": f"Missing required argument: {str(e)}"}
+            return {"error": f"{type(e).__name__}: {str(e)}"}
 
-    async def _execute_tool_with_dispatch(self, tool, arguments: Dict[str, Any]) -> Any:
+    async def _execute_tool_with_dispatch(
+        self, tool: BaseTool, arguments: Dict[str, Any]
+    ) -> Any:
         """
-        Execute the appropriate tool method based on available parameters and tool interface.
+        Run the tool using its available async or sync method.
 
         Args:
-            tool: The tool object to execute
-            arguments: Dictionary of arguments to pass to the tool
+            tool: The tool instance to execute.
+            arguments: Parameters to pass to the tool.
 
         Returns:
-            The result of the tool execution
+            Result from the tool method, or error message.
         """
         if hasattr(tool, "arun"):
-            # LangChain BaseTool requires the first argument to be tool_input
-            # We pass the entire arguments dictionary as that input
             return await tool.arun(arguments)
-        elif hasattr(tool, "invoke"):
-            # For invoke, we pass the arguments directly
-            return tool.invoke(arguments)
-        else:
-            # Fallback for any other case
-            return {"error": "Tool has no supported execution method"}
 
-    def _get_main_parameter(self, tool, arguments: Dict[str, Any]) -> Optional[Any]:
+        if hasattr(tool, "invoke"):
+            return tool.invoke(arguments)
+
+        return {"error": "Tool has no supported execution method"}
+
+    def _get_main_parameter(
+        self, tool: BaseTool, arguments: Dict[str, Any]
+    ) -> Optional[Any]:
         """
-        Extract the main parameter from the arguments based on tool schema.
+        Determine the main input value from arguments, based on schema.
 
         Args:
-            tool: The tool object to inspect
-            arguments: Dictionary of arguments to analyze
+            tool: The tool to analyze.
+            arguments: Provided arguments to match against the schema.
 
         Returns:
-            The main parameter value if found, None otherwise
+            The main parameter value or None if ambiguous.
         """
         param_name = self._get_tool_main_param_name(tool)
 
@@ -172,15 +141,15 @@ class RealtimeToolHandler(LoggingMixin):
 
         return None
 
-    def _get_tool_main_param_name(self, tool) -> Optional[str]:
+    def _get_tool_main_param_name(self, tool: BaseTool) -> Optional[str]:
         """
-        Determine the main parameter name from the tool's schema.
+        Retrieve the primary argument name from the tool schema.
 
         Args:
-            tool: The tool object to inspect
+            tool: The tool with a defined argument schema.
 
         Returns:
-            The name of the main parameter if found, None otherwise
+            Name of the main argument or None if not determinable.
         """
         if not hasattr(tool, "args_schema"):
             return None
@@ -196,18 +165,20 @@ class RealtimeToolHandler(LoggingMixin):
             if required:
                 return required[0]
         except (AttributeError, TypeError):
-            pass  # args_schema.schema() might not exist or be malformed
+            pass
 
         return None
 
-    async def send_function_result(self, call_id: str, result: Any, connection) -> None:
+    async def send_function_result(
+        self, call_id: str, result: Any, connection: WebSocketClientProtocol
+    ) -> None:
         """
-        Send the function execution result back over the WebSocket connection.
+        Send the result of a function execution back to the client.
 
         Args:
-            call_id: The ID of the function call
-            result: The result of the function execution
-            connection: WebSocket connection to send results back
+            call_id: Unique identifier of the function call.
+            result: The computed or returned result.
+            connection: WebSocket connection to send back data.
         """
         result_str = self._convert_result_to_json_string(result)
         function_output = {
@@ -229,50 +200,50 @@ class RealtimeToolHandler(LoggingMixin):
 
     def _convert_result_to_json_string(self, result: Any) -> str:
         """
-        Convert any result object to a JSON string representation.
+        Safely convert a tool result to a JSON string.
 
         Args:
-            result: The result object to convert
+            result: The output from the tool.
 
         Returns:
-            A JSON string representation of the result
+            A valid JSON string representation.
         """
         if isinstance(result, dict):
             return json.dumps(result)
-        elif not isinstance(result, str):
-            return json.dumps({"result": str(result)})
-        else:
-            try:
-                json.loads(result)
-                return result
-            except JSONDecodeError:
-                return json.dumps({"result": result})
 
-    async def create_new_response(self, connection) -> None:
+        if not isinstance(result, str):
+            return json.dumps({"result": str(result)})
+
+        try:
+            json.loads(result)
+            return result
+        except JSONDecodeError:
+            return json.dumps({"result": result})
+
+    async def create_new_response(self, connection: WebSocketClientProtocol) -> None:
         """
-        Create a new response message after sending function results.
+        Instruct the client to continue the conversation after a function result.
 
         Args:
-            connection: WebSocket connection to send the message
+            connection: The WebSocket connection to send the message.
         """
-        response_create = {"type": "response.create"}
-
         self.logger.info("Creating new response after function result.")
-
-        await connection.send(json.dumps(response_create))
+        await connection.send(json.dumps({"type": "response.create"}))
 
     def _truncate_result(self, result: Union[str, Any], max_length: int = 100) -> str:
         """
-        Truncate a string representation of a result for logging purposes.
+        Truncate a result string for concise logging.
 
         Args:
-            result: The result to truncate
-            max_length: Maximum length of the truncated string
+            result: Full result string or object.
+            max_length: Maximum length before truncating.
 
         Returns:
-            The truncated string
+            A shortened string with ellipsis if needed.
         """
         result_str = str(result)
-        if len(result_str) > max_length:
-            return result_str[:max_length] + "..."
-        return result_str
+        return (
+            result_str[:max_length] + "..."
+            if len(result_str) > max_length
+            else result_str
+        )

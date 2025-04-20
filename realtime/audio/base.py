@@ -43,23 +43,3 @@ class AudioPlayerBase(ABC):
             filename = f"{sound_name}.mp3"
 
         return os.path.join(self.sounds_dir, filename)
-
-
-class MicrophoneBase(ABC):
-    """Abstract base class for microphone input"""
-
-    @abstractmethod
-    def start_stream(self):
-        """Start the microphone stream"""
-
-    @abstractmethod
-    def stop_stream(self):
-        """Stop the microphone stream"""
-
-    @abstractmethod
-    def read_chunk(self):
-        """Read a chunk of audio data from the microphone"""
-
-    @abstractmethod
-    def cleanup(self):
-        """Clean up resources"""
