@@ -3,7 +3,7 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from realtime.audio.player import PyAudioPlayer
+from realtime.audio.py_audio_player import PyAudioPlayer
 from utils.logging_mixin import setup_logging
 from speech.voice_assistant_controller import VoiceAssistantController
 

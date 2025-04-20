@@ -28,7 +28,7 @@ async def get_weather() -> str:
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
         temperature=0.2,
-        streaming=False,
+        disable_streaming=True,
     )
 
     weather_text = "\n".join(weather_lines)

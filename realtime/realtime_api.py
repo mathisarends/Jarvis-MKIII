@@ -4,7 +4,7 @@ import asyncio
 from typing import Optional, Callable, Dict, Any, List, cast
 import websockets
 
-from realtime.audio.base import AudioPlayerBase
+from realtime.audio.audio_player_base import AudioPlayer
 from realtime.audio.microphone import PyAudioMicrophone
 from realtime.config import (
     OPENAI_WEBSOCKET_URL,
@@ -15,6 +15,7 @@ from realtime.config import (
 )
 from realtime.realtime_tool_handler import RealtimeToolHandler
 from realtime.typings import AudioDeltaResponse, OpenAIRealtimeResponse
+from tools.volume_tool import get_volume_tool, set_volume_tool
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
 from tools.tool_registry import ToolRegistry
@@ -36,7 +37,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
 
-    # TOOD: REFACTORING IDEE: (Eigentlich lässt sich die Config hier ja auch übe Instanzvairalben regeln komplett)
     def __init__(self):
         """
         Initialize the OpenAI Realtime API client.
@@ -63,6 +63,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
         try:
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
+            self.tool_registry.register_tool(set_volume_tool)
+            self.tool_registry.register_tool(get_volume_tool)
 
             self.logger.info("All tools successfully registered")
         except Exception as e:
@@ -91,7 +93,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
     async def setup_and_run(
         self,
         mic_stream: PyAudioMicrophone,
-        audio_player: AudioPlayerBase,
+        audio_player: AudioPlayer,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
         event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> bool:
@@ -250,7 +252,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
     async def process_responses(
         self,
-        audio_player: AudioPlayerBase,
+        audio_player: AudioPlayer,
         handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
         event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
@@ -313,7 +315,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
     async def _process_single_message(
         self,
         message: str,
-        audio_player: AudioPlayerBase,
+        audio_player: AudioPlayer,
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
         event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
@@ -381,7 +383,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self,
         event_type: str,
         response: OpenAIRealtimeResponse,
-        audio_player: AudioPlayerBase,
+        audio_player: AudioPlayer,
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
         event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
@@ -429,7 +431,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 self.logger.error("API error: %s", response)
 
     def _handle_audio_delta(
-        self, response: OpenAIRealtimeResponse, audio_player: AudioPlayerBase
+        self, response: OpenAIRealtimeResponse, audio_player: AudioPlayer
     ) -> None:
         """
         Handle audio responses from OpenAI API.

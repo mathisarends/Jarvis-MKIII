@@ -2,20 +2,21 @@ import base64
 import threading
 import queue
 import os
-import numpy as np
 from typing import override
+
+import numpy as np
 
 import pyaudio
 import pygame
 
 from realtime.config import FORMAT, CHANNELS, CHUNK, RATE
-from realtime.audio.base import AudioPlayerBase
+from realtime.audio.audio_player_base import AudioPlayer
 from utils.logging_mixin import LoggingMixin
 from utils.singleton_decorator import singleton
 
 
 @singleton
-class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
+class PyAudioPlayer(AudioPlayer, LoggingMixin):
     """PyAudio implementation of the AudioPlayerBase class with sound file playback"""
 
     def __init__(self, sounds_dir="sounds", fadeout_duration_ms=300):
@@ -26,7 +27,8 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
         self.player_thread = None
         self.sounds_dir = sounds_dir
         self.fadeout_duration_ms = fadeout_duration_ms
-        self.current_audio_data = bytes()  # To store the current audio being played
+        self.current_audio_data = bytes()
+        self.volume = 1.0
 
     @override
     def start(self):
@@ -58,12 +60,10 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
             except Exception as e:
                 self.logger.error("Error during fadeout: %s", e)
             finally:
-                # Close the stream after fadeout
                 self.stream.stop_stream()
                 self.stream.close()
                 self.stream = None
 
-        # Clear the queue
         with self.audio_queue.mutex:
             self.audio_queue.queue.clear()
 
@@ -127,7 +127,7 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
             self.stream.write(fadeout_data)
 
         except Exception as e:
-            self.logger.error(f"Error in fadeout processing: {e}")
+            self.logger.error("Error in fadeout processing: %s", e)
 
     def _play_audio_loop(self):
         """Thread loop for playing audio chunks"""
@@ -135,14 +135,33 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
             try:
                 chunk = self.audio_queue.get(timeout=0.5)
                 if chunk:
+                    adjusted_chunk = self._adjust_volume(chunk)
                     # Store the current chunk for potential fadeout
-                    self.current_audio_data = chunk
-                    self.stream.write(chunk)
+                    self.current_audio_data = adjusted_chunk
+                    self.stream.write(adjusted_chunk)
                 self.audio_queue.task_done()
             except queue.Empty:
                 continue
             except Exception as e:
                 self.logger.error("Error playing audio: %s", e)
+
+    def _adjust_volume(self, audio_chunk):
+        """Adjust the volume of an audio chunk"""
+        if abs(self.volume - 1.0) < 1e-6:
+            return audio_chunk
+
+        try:
+            # Convert bytes to numpy array
+            audio_array = np.frombuffer(audio_chunk, dtype=np.int16)
+
+            # Apply volume adjustment
+            adjusted_array = (audio_array * self.volume).astype(np.int16)
+
+            # Convert back to bytes
+            return adjusted_array.tobytes()
+        except Exception as e:
+            self.logger.error("Error adjusting volume: %s", e)
+            return audio_chunk
 
     @override
     def add_audio_chunk(self, base64_audio):
@@ -166,20 +185,10 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
         self.p.terminate()
         self.logger.info("Audio player stopped")
 
-    # Das hier für die Truncate Logik hier umsetzen bitte:
-    def get_current_playback_position_ms(self):
-        """
-        Get the current playback position in milliseconds.
-        This is approximate based on audio chunks processed.
-        """
-        # You might want to implement a more accurate position tracking
-        # For now returning a placeholder
-        return 0  # Implement actual position tracking if needed
-
     @override
     def play_sound(self, sound_name: str) -> bool:
         """
-        Play a sound file asynchronously.
+        Play a sound file asynchronously (non-blocking).
 
         Args:
             sound_name: Name of the sound file (with or without .mp3 extension)
@@ -194,42 +203,13 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
                 self.logger.warning("Sound file not found: %s", sound_path)
                 return False
 
-            threading.Thread(
-                target=self.play_sound_blocking, args=(sound_name,), daemon=True
-            ).start()
-
-            return True
-
-        except Exception as e:
-            self.logger.error("Error starting sound playback %s: %s", sound_name, e)
-            return False
-
-    @override
-    def play_sound_blocking(self, sound_name: str) -> bool:
-        """
-        Play an MP3 sound file and wait for it to complete.
-
-        Args:
-            sound_name: Name of the sound file (with or without .mp3 extension)
-
-        Returns:
-            True if playback successful, False otherwise
-        """
-        try:
-            sound_path = self._get_sound_path(sound_name)
-
-            if not os.path.exists(sound_path):
-                self.logger.error("Sound file not found: %s", sound_path)
-                return False
-
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
 
+            # Get sound object and adjust volume
             sound = pygame.mixer.Sound(sound_path)
+            sound.set_volume(self.volume)
             sound.play()
-
-            while pygame.mixer.get_busy():
-                pygame.time.wait(100)
 
             return True
 
@@ -242,3 +222,30 @@ class PyAudioPlayer(AudioPlayerBase, LoggingMixin):
         if not sound_name.lower().endswith(".mp3"):
             sound_name += ".mp3"
         return os.path.join(self.sounds_dir, sound_name)
+
+    @override
+    def set_volume_level(self, volume: float):
+        """
+        Set the volume level for the audio player.
+
+        Args:
+            volume: Volume level between 0.0 (mute) and 1.0 (maximum)
+        """
+        self.volume = max(0.0, min(1.0, volume))
+        self.logger.info("Volume set to: %.2f", self.volume)
+
+        # Update pygame mixer volume if initialized
+        if pygame.mixer.get_init():
+            pygame.mixer.music.set_volume(self.volume)
+
+        return self.volume
+
+    @override
+    def get_volume_level(self) -> float:
+        """
+        Get the current volume level of the audio player.
+
+        Returns:
+            The current volume level between 0.0 and 1.0
+        """
+        return self.volume

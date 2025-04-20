@@ -1,8 +1,10 @@
-from abc import ABC, abstractmethod
 import os
+from abc import ABC, abstractmethod
+
+from utils.logging_mixin import LoggingMixin
 
 
-class AudioPlayerBase(ABC):
+class AudioPlayer(ABC, LoggingMixin):
     """Abstract base class for audio players"""
 
     sounds_dir = "sounds"
@@ -30,10 +32,12 @@ class AudioPlayerBase(ABC):
         """
 
     @abstractmethod
-    def play_sound_blocking(self, sound_name: str) -> bool:
-        """
-        Play a sound file and wait for it to finish.
-        """
+    def set_volume_level(self, volume: float):
+        """Set the volume level for the audio player"""
+
+    @abstractmethod
+    def get_volume_level(self) -> float:
+        """Get the current volume level of the audio player"""
 
     def _get_sound_path(self, sound_name: str) -> str:
         """Get the full path to a sound file"""
