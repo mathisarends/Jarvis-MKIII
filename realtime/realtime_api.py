@@ -1,7 +1,6 @@
 import json
 import base64
 import asyncio
-import time
 from typing import Optional, Callable, Dict, Any, List, cast
 import websockets
 
@@ -58,7 +57,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.audio_player = AudioPlayerFactory.get_shared_instance()
         
         self.duration_tracker = ConversationDurationTracker()
-        self._last_item_id = None
 
         self.logger.info("OpenAI Realtime API class initialized")
 
@@ -107,6 +105,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         Args:
             mic_stream: A MicrophoneStream object for audio input
+            audio_player: An AudioPlayer object for audio playback
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events
 
@@ -121,13 +120,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return False
 
         try:
-            # Starte den ConversationDurationTracker für diese Konversation
-            self.duration_tracker.start_conversation()
-            self.logger.info("Started conversation tracking at %sms", self.duration_tracker.current_time_ms)
-            
-            # Reset item ID für diese neue Konversation
-            self._last_item_id = None
-            
             await asyncio.gather(
                 self.send_audio(mic_stream),
                 self.process_responses(
@@ -140,9 +132,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.info("Tasks were cancelled")
             return True
         finally:
-            # Beende den Tracker und logge die Gesamtdauer
-            duration = self.duration_tracker.end_conversation()
-            self.logger.info("Conversation ended. Total duration: %dms (%.2fs)", duration, duration / 1000)
             await self.close()
 
     async def create_connection(self) -> Optional[websockets.WebSocketClientProtocol]:
@@ -217,6 +206,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             audio_chunks_sent = 0
 
             while mic_stream.is_active:
+                # Check if connection is still open
                 if not self.connection or self.connection.closed:
                     self.logger.info("Connection closed, stopping audio transmission")
                     break
@@ -247,6 +237,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 await asyncio.sleep(0.01)
 
         except websockets.exceptions.ConnectionClosedOK:
+            # Normal connection closure
             self.logger.info("WebSocket connection closed normally during audio send")
         except websockets.exceptions.ConnectionClosedError as e:
             if str(e).startswith("sent 1000 (OK)"):
@@ -271,6 +262,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Process responses from the OpenAI API.
 
         Args:
+            audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events
@@ -290,11 +282,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 )
 
         except websockets.exceptions.ConnectionClosedOK:
+            # Normal connection closure
             self.logger.info(
                 "WebSocket connection closed normally during response processing"
             )
         except websockets.exceptions.ConnectionClosedError as e:
             if str(e).startswith("sent 1000 (OK)"):
+                # Also normal behavior
                 self.logger.info(
                     "WebSocket connection closed normally during response processing"
                 )
@@ -330,6 +324,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         Args:
             message: The raw message string received from the API
+            audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events
@@ -341,9 +336,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             if not response:
                 return
 
-            # Tracke item IDs für Truncation
-            self._track_message_items(response)
-            
             event_type = response.get("type", "")
 
             await self._route_event(
@@ -358,30 +350,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.warning("Received malformed JSON message: %s", e)
         except KeyError as e:
             self.logger.warning("Expected key missing in message: %s", e)
-
-    def _track_message_items(self, response: OpenAIRealtimeResponse) -> None:
-        """
-        Verfolgt Message-Items vom Assistenten für spätere Truncation.
-        
-        Basierend auf der OpenAI Realtime API-Dokumentation werden die
-        IDs der erzeugten Nachrichtenelemente nachverfolgt.
-        """
-        event_type = response.get("type", "")
-        
-        if event_type == "response.created":
-            if "response" in response and "id" in response["response"]:
-                self._last_item_id = response["response"]["id"]
-                self.logger.debug("New response created: ID=%s", self._last_item_id)
-        
-        elif event_type == "response.output_item.added":
-            if "item" in response and "id" in response["item"]:
-                self._last_item_id = response["item"]["id"]
-                self.logger.debug("Output item added: ID=%s", self._last_item_id)
-        
-        elif event_type == "response.content_part.added":
-            if "item" in response and "id" in response["item"]:
-                self._last_item_id = response["item"]["id"]
-                self.logger.debug("Content part added: ID=%s", self._last_item_id)
 
     def _parse_response(self, message: str) -> Optional[Dict[str, Any]]:
         """
@@ -423,6 +391,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Args:
             event_type: The type of event from the response
             response: The full response object
+            audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events (propagated to controller)
@@ -434,8 +403,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         # Then handle the events normally
         if event_type == "input_audio_buffer.speech_started":
             self.audio_player.clear_queue_and_stop()
-            
-            await self._handle_truncation()
 
         if event_type == "response.text.delta" and "delta" in response:
             if handle_text:
@@ -455,10 +422,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 response, self.connection
             )
 
-        elif event_type == "conversation.item.truncated":
-            # Bestätigung für erfolgreiches Truncation
-            self.logger.info("Truncation successful: %s", response)
-
         elif event_type in ["error", "session.updated", "session.created"]:
             self.logger.info("Event received: %s", event_type)
             if event_type == "error":
@@ -470,6 +433,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         Args:
             response: The response containing audio data
+            audio_player: An AudioPlayer object for audio playback
         """
         if response["type"] != "response.audio.delta":
             return
@@ -479,33 +443,3 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         self.audio_player.add_audio_chunk(base64_audio)
-
-    async def _handle_truncation(self):
-        """
-        Sendet ein truncate-Event, wenn eine Konversation aktiv ist und Audio abgespielt wird.
-        Nutzt den ConversationDurationTracker, um die korrekte Zeitangabe zu ermitteln.
-        """
-        if not self.connection or self.connection.closed:
-            self.logger.error("No connection available for truncation")
-            return
-            
-        if not self._last_item_id:
-            self.logger.debug("No active conversation item to truncate")
-            return
-        
-        # Hole die aktuelle Zeit in Millisekunden seit Konversationsbeginn
-        current_time_ms = self.duration_tracker.duration_ms
-        
-        truncate_event = {
-            "type": "conversation.item.truncate",
-            "item_id": self._last_item_id,
-            "content_index": 0,
-            "audio_end_ms": current_time_ms,
-            "event_id": f"truncate_{int(time.time() * 1000)}"
-        }
-        
-        try:
-            self.logger.info(f"Sending truncation at {current_time_ms}ms for item {self._last_item_id}")
-            await self.connection.send(json.dumps(truncate_event))
-        except Exception as e:
-            self.logger.error("Failed to send truncation event: %s", exc_info=e)

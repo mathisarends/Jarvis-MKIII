@@ -41,7 +41,7 @@ class DoneResponseWithToolCall(TypedDict):
 
 class FunctionCallItem(TypedDict):
     type: Literal["function_call"]
-    name: str
+    name: Optional[str]
     call_id: str
     arguments: str
 
