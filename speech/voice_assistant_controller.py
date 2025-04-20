@@ -198,8 +198,6 @@ class VoiceAssistantController(LoggingMixin):
                 self._is_responding = True
                 self._response_started_at = time.time()
 
-    # Private methods below
-
     def _register_activity(self):
         """
         Update the last activity timestamp and set activity event.
@@ -228,7 +226,6 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.info("Response completed event received")
             # Handle response done in timeout manager
             self.timeout_manager.handle_response_done(self._transcript_text)
-            # Ensure we're in RESPONDING state
             self.state = AssistantState.RESPONDING
 
     def _handle_transcript(self, response):
@@ -280,7 +277,7 @@ class VoiceAssistantController(LoggingMixin):
         """
         Handle a single conversation after wake word detection.
         Manages the entire conversation lifecycle from wake word detection to completion.
-        """
+        """        
         self.logger.info("Wake word detected! Starting conversation...")
         self._prepare_conversation()
 
@@ -322,12 +319,12 @@ class VoiceAssistantController(LoggingMixin):
     async def _start_api_processing(self):
         """Start the OpenAI API processing"""
         return await self.openai_api.setup_and_run(
-            self.mic_stream,
-            self.audio_player,
+            mic_stream=self.mic_stream,
             handle_transcript=self._handle_transcript,
             event_handler=self._handle_api_event,
         )
 
+    # TODO: Was ist das hier denn?
     async def _handle_completed_tasks(self, done):
         """Handle tasks that have completed"""
         for task in done:
