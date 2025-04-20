@@ -26,7 +26,7 @@ async def main():
     logger.info("Starting voice assistant...")
 
     voice_assistant = VoiceAssistantController(
-        wake_word="jarvis", sensitivity=0.7, inactivity_timeout=7.0, cooldown_period=1.0
+        wake_word="jarvis", sensitivity=0.7, cooldown_period=1.0
     )
 
     player = PyAudioPlayer()

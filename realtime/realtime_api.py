@@ -1,7 +1,6 @@
 import json
 import base64
 import asyncio
-import traceback
 from typing import Optional, Callable, Dict, Any, List, cast
 import websockets
 
@@ -37,6 +36,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
 
+    # TOOD: REFACTORING IDEE: (Eigentlich lässt sich die Config hier ja auch übe Instanzvairalben regeln komplett)
     def __init__(self):
         """
         Initialize the OpenAI Realtime API client.
@@ -93,6 +93,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         mic_stream: PyAudioMicrophone,
         audio_player: AudioPlayerBase,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
+        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> bool:
         """
         Set up the connection and run the main loop.
@@ -101,6 +102,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             mic_stream: A MicrophoneStream object for audio input
             audio_player: An AudioPlayer object for audio playback
             handle_transcript: Optional function to handle transcript responses
+            event_handler: Optional function to handle special events
 
         Returns:
             True on successful execution, False on error
@@ -118,6 +120,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 self.process_responses(
                     audio_player=audio_player,
                     handle_transcript=handle_transcript,
+                    event_handler=event_handler,
                 ),
             )
             return True
@@ -250,6 +253,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         audio_player: AudioPlayerBase,
         handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
+        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> None:
         """
         Process responses from the OpenAI API.
@@ -258,6 +262,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
+            event_handler: Optional function to handle special events
         """
         if not self.connection:
             self.logger.error(self.NO_CONNECTION_ERROR_MSG)
@@ -267,7 +272,11 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.info("Starting response processing...")
             async for message in self.connection:
                 await self._process_single_message(
-                    message, audio_player, handle_text, handle_transcript
+                    message=message,
+                    audio_player=audio_player,
+                    handle_text=handle_text,
+                    handle_transcript=handle_transcript,
+                    event_handler=event_handler,
                 )
 
         except websockets.exceptions.ConnectionClosedOK:
@@ -307,6 +316,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         audio_player: AudioPlayerBase,
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
+        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> None:
         """
         Process a single message from the API stream.
@@ -316,6 +326,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
+            event_handler: Optional function to handle special events
         """
         try:
             self.logger.debug("Raw message received: %s...", message[:100])
@@ -327,7 +338,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
             event_type = response.get("type", "")
 
             await self._route_event(
-                event_type, response, audio_player, handle_text, handle_transcript
+                event_type,
+                response,
+                audio_player,
+                handle_text,
+                handle_transcript,
+                event_handler,
             )
 
         except json.JSONDecodeError as e:
@@ -368,7 +384,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
         audio_player: AudioPlayerBase,
         handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
-    ) -> None:
+        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    ):
         """
         Route the event to the appropriate handler based on event type.
 
@@ -378,8 +395,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
             audio_player: An AudioPlayer object for audio playback
             handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
+            event_handler: Optional function to handle special events (propagated to controller)
         """
+        if event_handler:
+            if event_type in ["input_audio_buffer.speech_started", "response.done"]:
+                event_handler(event_type)
 
+        # Then handle the events normally
         if event_type == "input_audio_buffer.speech_started":
             audio_player.clear_queue_and_stop()
 
