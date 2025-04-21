@@ -14,6 +14,7 @@ class EventType(Enum):
     USER_SPEECH_STARTED = auto()
     ASSISTANT_RESPONSE_COMPLETED = auto()
     TRANSCRIPT_UPDATED = auto()
+    STATE_CHANGED = auto()
 
 
 class EventBus:

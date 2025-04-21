@@ -10,7 +10,7 @@ class DoneMessage(LoggingMixin):
 
     This class uses lazy evaluation to extract information from the response only when needed.
     It focuses on message item ID, text content, and tool call detection as core functionality.
-    
+
     Supports both text-type and audio-type messages with transcripts.
     """
 
@@ -90,10 +90,10 @@ class DoneMessage(LoggingMixin):
 
             text_parts = self._extract_text_parts(content_items)
             result = "".join(text_parts)
-            
+
             self.logger.debug("Extracted message text: '%s'", result)
             return result
-            
+
         except Exception as e:
             self.logger.error("Error extracting message text: %s", e)
             return ""
@@ -101,10 +101,10 @@ class DoneMessage(LoggingMixin):
     def _find_message_item(self, output_items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Find the message item in the output items.
-        
+
         Args:
             output_items: List of output items
-            
+
         Returns:
             The message item or an empty dict if not found
         """
@@ -116,15 +116,15 @@ class DoneMessage(LoggingMixin):
     def _extract_text_parts(self, content_items: List[Dict[str, Any]]) -> List[str]:
         """
         Extract text parts from content items.
-        
+
         Args:
             content_items: List of content items
-            
+
         Returns:
             List of extracted text parts
         """
         text_parts = []
-        
+
         for content_item in content_items:
             # Handle text-type content
             if content_item.get("type") == "text":
@@ -132,14 +132,14 @@ class DoneMessage(LoggingMixin):
                 if text_part:
                     self.logger.debug("Found text content: '%s'", text_part)
                     text_parts.append(text_part)
-                    
+
             # Handle audio-type content with transcript
             elif content_item.get("type") == "audio" and "transcript" in content_item:
                 transcript = content_item.get("transcript", "")
                 if transcript:
                     self.logger.debug("Found audio transcript: '%s'", transcript)
                     text_parts.append(transcript)
-                    
+
         return text_parts
 
     @cached_property
@@ -211,11 +211,11 @@ class DoneMessage(LoggingMixin):
     def is_valid(self) -> bool:
         """
         Check if this is a valid and complete response.done message.
-        
+
         Returns:
             True if the response is valid and complete, False otherwise
         """
         return (
-            self.raw_response.get("type") == "response.done" and
-            self.raw_response.get("response", {}).get("status") == "completed"
+            self.raw_response.get("type") == "response.done"
+            and self.raw_response.get("response", {}).get("status") == "completed"
         )

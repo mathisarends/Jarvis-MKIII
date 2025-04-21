@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from audio.py_audio_player import PyAudioPlayer
 from audio.audio_player_factory import AudioPlayerFactory
+from lights.light_controller import LightController
 from utils.logging_mixin import setup_logging
 from speech.voice_assistant_controller import VoiceAssistantController
 
@@ -27,6 +28,8 @@ async def main():
     logger.info("Starting voice assistant...")
 
     AudioPlayerFactory.initialize_with(PyAudioPlayer)
+    
+    _ = LightController()
 
     voice_assistant = VoiceAssistantController(wake_word="jarvis", sensitivity=0.7)
 

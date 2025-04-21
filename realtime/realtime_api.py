@@ -24,6 +24,7 @@ from tools.pomodoro.pomodoro_tool import (
 from tools.volume_tool import get_volume_tool, set_volume_tool
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
+from tools.clipboard_tool import clipboard_tool
 from tools.tool_registry import ToolRegistry
 
 from utils.logging_mixin import LoggingMixin
@@ -80,6 +81,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.tool_registry.register_tool(start_pomodoro_timer)
             self.tool_registry.register_tool(stop_pomodoro_timer)
             self.tool_registry.register_tool(get_pomodoro_status)
+            self.tool_registry.register_tool(clipboard_tool)
 
             self.logger.info("All tools successfully registered")
         except Exception as e:
@@ -267,13 +269,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
         """
         if event_type == "response.done":
             self.logger.info("Assistant response completed event received")
-            await self.event_bus.publish_async(EventType.ASSISTANT_RESPONSE_COMPLETED)
-
             done_message = DoneMessage.from_json(response)
+
+            self.event_bus.publish(
+                EventType.ASSISTANT_RESPONSE_COMPLETED, data=done_message.transcript
+            )
+
             self._last_assistant_message_item_id = done_message.message_item_id
-            
-            transcript = done_message.transcript
-            print("transcript", transcript)
 
             if done_message.contains_tool_call:
                 await self.tool_handler.handle_function_call_in_response(
@@ -285,7 +287,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.info("User speech started event received")
 
             self.audio_player.clear_queue_and_stop()
-            await self.event_bus.publish_async(EventType.USER_SPEECH_STARTED)
+            self.event_bus.publish(EventType.USER_SPEECH_STARTED)
 
             if self._last_assistant_message_item_id:
                 await self.ws_manager.send_truncate_message(

@@ -1,7 +1,6 @@
 import logging
 import os
 import threading
-import time
 
 import numpy as np
 import pvporcupine
@@ -83,8 +82,6 @@ class WakeWordListener:
         self.logger.info("🧹 Räume Wake-Word-Listener auf...")
         self.should_stop = True
         self.is_listening = False
-
-        time.sleep(0.2)
 
         if self.stream:
             self.stream.stop_stream()

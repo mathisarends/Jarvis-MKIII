@@ -12,6 +12,7 @@ from speech.wake_word_listener import WakeWordListener
 
 from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
+from utils.singleton_decorator import singleton
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
 
@@ -23,6 +24,7 @@ class AssistantState(Enum):
     RESPONDING = auto()
 
 
+@singleton
 class VoiceAssistantController(LoggingMixin):
     """
     Controller for voice assistant that integrates wake word detection with OpenAI API.
@@ -70,11 +72,12 @@ class VoiceAssistantController(LoggingMixin):
         self.mic_stream = None
         self.audio_player = AudioPlayerFactory.get_shared_instance()
 
-        self.state = AssistantState.IDLE
+        self._state = AssistantState.IDLE
         self.activity_detected = threading.Event()
         self.conversation_active = False
         self.should_stop = False
 
+        self.full_transcript = ""
         self._transcript_text = ""
 
         self._initialize_event_bus()
@@ -82,6 +85,22 @@ class VoiceAssistantController(LoggingMixin):
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
         )
+        
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        if hasattr(self, '_state') and self._state == value:
+            return
+        
+        self._state = value
+        
+        if hasattr(self, 'event_bus'):
+            self.logger.debug("State changed to: %s", value)
+            self.event_bus.publish(EventType.STATE_CHANGED, value)
+
 
     def _initialize_event_bus(self):
         """
@@ -89,8 +108,12 @@ class VoiceAssistantController(LoggingMixin):
         This method sets up the event bus and subscribes to necessary events.
         """
         self.event_bus = EventBus()
-        self.event_bus.subscribe(EventType.USER_SPEECH_STARTED, self.timeout_manager.handle_speech_started)
-        self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response)
+        self.event_bus.subscribe(
+            EventType.USER_SPEECH_STARTED, self.timeout_manager.handle_speech_started
+        )
+        self.event_bus.subscribe(
+            EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response
+        )
         self.event_bus.subscribe(EventType.TRANSCRIPT_UPDATED, self._handle_transcript)
 
     async def initialize(self):
@@ -179,9 +202,12 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.info("Manually stopping current conversation")
             self.conversation_active = False
 
-    def handle_assistant_response(self):
-        self.logger.info("Response completed event received")
-        # Handle response done in timeout manager
+    def handle_assistant_response(self, transcript_text) -> None:
+        # this is necassary for the timeout manager to estimate the response duration, overwhise the
+        # whole converstation would just be appended
+        if transcript_text:
+            self._transcript_text = transcript_text
+
         self.timeout_manager.handle_response_done(self._transcript_text)
         self.state = AssistantState.RESPONDING
 
@@ -197,6 +223,7 @@ class VoiceAssistantController(LoggingMixin):
             return
 
         self._transcript_text += delta
+        self.full_transcript += delta
 
         print(f"\rAssistant: {self._transcript_text}", end="", flush=True)
 
