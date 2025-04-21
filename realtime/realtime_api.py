@@ -12,7 +12,8 @@ from realtime.config import (
     VOICE,
 )
 from realtime.realtime_tool_handler import RealtimeToolHandler
-from realtime.typings import AudioDeltaResponse, OpenAIRealtimeResponse
+from realtime.typings.done_message import DoneMessage
+from realtime.typings.typings import AudioDeltaResponse, OpenAIRealtimeResponse
 from realtime.websocket_manager import WebSocketManager
 from speech.converstation_duration_tracker import ConversationDurationTracker
 from tools.pomodoro.pomodoro_tool import (
@@ -268,11 +269,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.info("Assistant response completed event received")
             await self.event_bus.publish_async(EventType.ASSISTANT_RESPONSE_COMPLETED)
 
-            self._last_assistant_message_item_id = (
-                self._extract_assistant_message_item_id(response)
-            )
+            done_message = DoneMessage.from_json(response)
+            self._last_assistant_message_item_id = done_message.message_item_id
+            
+            transcript = done_message.transcript
+            print("transcript", transcript)
 
-            if self._response_contains_tool_call(response):
+            if done_message.contains_tool_call:
                 await self.tool_handler.handle_function_call_in_response(
                     response, self.ws_manager.connection
                 )
@@ -290,7 +293,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     audio_end_ms=self.session_duration_tracker.duration_ms
                     - self._current_response_start_time_ms,
                 )
-                
+
             return
 
         if event_type == "input_audio_buffer.speech_stopped":
@@ -333,6 +336,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.audio_player.add_audio_chunk(base64_audio)
 
+    # TODO: Das hier alles in eine Methode DoneMessage Klasse machen und auch das Trasncript muss überschrieben werden und nicht immer wieder appended.
     def _extract_assistant_message_item_id(
         self, response: OpenAIRealtimeResponse
     ) -> str:

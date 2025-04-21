@@ -42,7 +42,7 @@ class VoiceAssistantController(LoggingMixin):
         wake_word="jarvis",
         sensitivity=0.8,
         initial_wait=5.0,
-        post_response_wait=7.0,
+        post_response_wait=10.0,
         language="de",
     ):
         """
@@ -291,55 +291,6 @@ class VoiceAssistantController(LoggingMixin):
         return await self.openai_api.setup_and_run(
             mic_stream=self.mic_stream,
         )
-
-    async def _handle_completed_tasks(self, done):
-        """
-        Handle tasks that have completed.
-
-        Args:
-            done: Set of completed tasks
-
-        Returns:
-            bool: True if conversation should continue, False if it should end
-        """
-        inactivity_monitor_completed = False
-        api_task_completed = False
-
-        for task in done:
-            is_inactivity_monitor = (
-                getattr(task._coro, "__name__", "") == "_monitor_inactivity"
-            )
-            task_name = "Inactivity monitor" if is_inactivity_monitor else "API task"
-
-            self.logger.info("%s completed", task_name)
-
-            try:
-                task.result()
-
-                if is_inactivity_monitor:
-                    inactivity_monitor_completed = True
-                    self.logger.info("Conversation ended due to inactivity")
-                    self.conversation_active = False
-                else:
-                    api_task_completed = True
-
-            except (asyncio.CancelledError, websockets.exceptions.ConnectionClosedOK):
-                self.logger.info("%s ended normally", task_name)
-
-            except Exception as e:
-                self.logger.error(
-                    "Error in %s: %s - %s", task_name, type(e).__name__, e
-                )
-
-        # Entscheidungslogik
-        if not self.conversation_active or inactivity_monitor_completed:
-            return False
-
-        if api_task_completed:
-            return True
-
-        # Standard: Beende die Konversation
-        return False
 
     async def _cancel_pending_tasks(self, pending):
         """Cancel any pending tasks"""

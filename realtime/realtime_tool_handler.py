@@ -8,7 +8,7 @@ from langchain_core.tools import BaseTool
 from utils.logging_mixin import LoggingMixin
 from tools.tool_registry import ToolRegistry
 
-from realtime.typings import DoneResponseWithToolCall, FunctionCallItem
+from realtime.typings.typings import DoneResponseWithToolCall, FunctionCallItem
 
 
 class RealtimeToolHandler(LoggingMixin):
