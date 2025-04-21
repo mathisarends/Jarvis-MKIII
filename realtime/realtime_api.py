@@ -49,7 +49,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.voice = VOICE
         self.temperature = TEMPERATURE
 
-        # Create WebSocket manager
         self.ws_manager = WebSocketManager(OPENAI_WEBSOCKET_URL, OPENAI_HEADERS)
 
         self.tool_registry = ToolRegistry()
@@ -58,7 +57,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
         self.audio_player = AudioPlayerFactory.get_shared_instance()
         
-        # Get EventBus instance
         self.event_bus = EventBus()
 
         self.logger.info("OpenAI Realtime API class initialized")

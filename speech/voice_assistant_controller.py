@@ -14,7 +14,6 @@ from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
-
 class AssistantState(Enum):
     """Enumeration of possible assistant states"""
 
@@ -180,14 +179,6 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.info("Manually stopping current conversation")
             self.conversation_active = False
 
-    def _register_activity(self):
-        """
-        Update the last activity timestamp and set activity event.
-        Called whenever user or assistant activity is detected.
-        """
-        self.timeout_manager.register_activity()
-        self.activity_detected.set()
-
     def handle_user_speech_started(self):
         self._transcript_text = ""
         self.state = AssistantState.LISTENING
@@ -210,7 +201,6 @@ class VoiceAssistantController(LoggingMixin):
         if not delta:
             return
 
-        self._register_activity()
         self._transcript_text += delta
 
         print(f"\rAssistant: {self._transcript_text}", end="", flush=True)
@@ -258,7 +248,6 @@ class VoiceAssistantController(LoggingMixin):
                 inactivity_task = asyncio.create_task(self._monitor_inactivity())
                 api_task = asyncio.create_task(self._start_api_processing())
 
-                # Wait for one of the tasks to complete
                 done, pending = await asyncio.wait(
                     [inactivity_task, api_task], return_when=asyncio.FIRST_COMPLETED
                 )
@@ -267,10 +256,8 @@ class VoiceAssistantController(LoggingMixin):
                     "Tasks completed: %d, pending: %d", len(done), len(pending)
                 )
 
-                # Handle completed tasks
                 should_continue = await self._handle_completed_tasks(done)
 
-                # Break the loop only if the conversation was explicitly ended
                 if not should_continue:
                     self.logger.info("Conversation ending as requested")
                     break
@@ -419,7 +406,6 @@ class ConversationTimeoutManager(LoggingMixin):
         self.state = AssistantState.IDLE
         self.last_activity_time = 0
         self._had_speech_activity = False
-        self._user_speech_active = False
         self._response_done = False
         self._expected_response_end_time = 0
 
@@ -428,27 +414,12 @@ class ConversationTimeoutManager(LoggingMixin):
         self.state = AssistantState.LISTENING
         self.last_activity_time = time.time()
         self._had_speech_activity = False
-        self._user_speech_active = False
         self._response_done = False
         self._expected_response_end_time = 0
 
-    def register_activity(self):
-        """Register activity to reset inactivity timer"""
-        self.last_activity_time = time.time()
-
-        # Reset user_speech_active flag when in LISTENING state
-        # This ensures the flag is properly reset after speech ends
-        if self.state == AssistantState.LISTENING:
-            self._user_speech_active = True
-        else:
-            # If we're in RESPONDING state, make sure user isn't considered actively speaking
-            self._user_speech_active = False
-
     def handle_speech_started(self):
         """Handle speech started event"""
-        self.register_activity()
         self.state = AssistantState.LISTENING
-        self._user_speech_active = True
         self._had_speech_activity = True
         self.logger.debug("Speech activity detected, set state to LISTENING")
 
@@ -463,8 +434,6 @@ class ConversationTimeoutManager(LoggingMixin):
             float: The expected end time timestamp
         """
         self._response_done = True
-        # Explicitly set user speech to inactive
-        self._user_speech_active = False
 
         # Update the expected response end time based on the transcript
         if transcript_text:
@@ -509,7 +478,7 @@ class ConversationTimeoutManager(LoggingMixin):
         current_time = time.time()
 
         # Case 1: User is actively speaking - never timeout
-        if self._user_speech_active and self.state == AssistantState.LISTENING:
+        if self.state == AssistantState.LISTENING:
             self.logger.debug("User is actively speaking, not timing out")
             return False, ""
 
