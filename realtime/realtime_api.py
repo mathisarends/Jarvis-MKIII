@@ -332,9 +332,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 print("Propagating the input started event")
                 event_handler(event_type)
 
-        # Then handle the events normally
         if event_type == "input_audio_buffer.speech_started":
-            # Stoppe die Audio-Wiedergabe
             self.audio_player.clear_queue_and_stop()
 
         if event_type == "response.text.delta" and "delta" in response:
@@ -357,11 +355,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             await self.tool_handler.handle_function_call_in_response(
                 response, self.ws_manager.connection
             )
-
-        elif event_type == "conversation.item.truncated":
-            # Bestätigung für erfolgreiches Truncation
-            event_id = response.get("event_id", "unknown")
-            self.logger.info("Truncation successful for event: %s", event_id)
 
         elif event_type in ["error", "session.updated", "session.created"]:
             self.logger.info("Event received: %s", event_type)

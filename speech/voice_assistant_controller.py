@@ -205,8 +205,6 @@ class VoiceAssistantController(LoggingMixin):
         self.logger.info("API EVENT RECEIVED: %s", event_type)
 
         if event_type == "input_audio_buffer.speech_started":
-            self.logger.info("User speech started - INTERRUPTION DETECTED")
-            
             # Reset transcription when user starts speaking
             self._transcript_text = ""
             self.state = AssistantState.LISTENING
@@ -335,6 +333,7 @@ class VoiceAssistantController(LoggingMixin):
             event_handler=self._handle_api_event,
         )
 
+    # TODO: not very clean
     async def _handle_completed_tasks(self, done):
         """
         Handle tasks that have completed.
@@ -345,9 +344,7 @@ class VoiceAssistantController(LoggingMixin):
         Returns:
             bool: True if conversation should continue, False if it should end
         """
-        print("handle completed tasks")
         for task in done:
-            print("task", task)
             task_name = (
                 "Inactivity monitor"
                 if task._coro.__name__ == "_monitor_inactivity"

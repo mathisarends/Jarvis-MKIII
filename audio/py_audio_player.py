@@ -2,6 +2,7 @@ import base64
 import threading
 import queue
 import os
+import traceback
 from typing import override
 
 import numpy as np
@@ -43,36 +44,38 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.player_thread.start()
         self.logger.info("Audio player started with sample rate: %d Hz", RATE)
 
+    @override
     def clear_queue_and_stop(self):
         """
-        Stop the current audio stream and clear the audio queue.
+        Stop the current audio playback and clear the audio queue,
+        but keep the stream and thread alive for future audio.
         """
         self.logger.info("Speech started — clearing queue.")
-
-        if self.stream and self.stream.is_active():
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
 
         with self.audio_queue.mutex:
             self.audio_queue.queue.clear()
 
-        # Restart the audio system
-        self.is_playing = True
-        self.stream = self.p.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RATE,
-            output=True,
-            frames_per_buffer=CHUNK,
-        )
+        if self.stream and self.stream.is_active():
+            try:
+                self.stream.stop_stream()
+                self.stream.start_stream()
+            except Exception as e:
+                self.logger.error("Error while pausing/resuming audio stream: %s", e)
+                try:
+                    if self.stream:
+                        self.stream.close()
+                    
+                    self.stream = self.p.open(
+                        format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        output=True, 
+                        frames_per_buffer=CHUNK,
+                    )
+                except Exception as e2:
+                    self.logger.error("Failed to recreate audio stream: %s", e2)
 
-        if not self.player_thread or not self.player_thread.is_alive():
-            self.player_thread = threading.Thread(target=self._play_audio_loop)
-            self.player_thread.daemon = True
-            self.player_thread.start()
-
-        self.logger.info("Audio player reset and ready.")
+        self.logger.info("Audio queue cleared, stream kept alive.")
 
     def _play_audio_loop(self):
         """Thread loop for playing audio chunks"""
@@ -88,7 +91,8 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             except queue.Empty:
                 continue
             except Exception as e:
-                self.logger.error("Error playing audio: %s", e)
+                error_traceback = traceback.format_exc()
+                self.logger.error("Error playing audio: %s\nTraceback:\n%s", e, error_traceback)
 
     def _adjust_volume(self, audio_chunk):
         """Adjust the volume of an audio chunk"""
