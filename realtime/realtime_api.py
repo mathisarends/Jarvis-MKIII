@@ -1,6 +1,6 @@
 import json
 import asyncio
-from typing import Optional, Callable, Dict, Any, List, cast
+from typing import Optional, Dict, Any, List, cast
 
 from audio.audio_player_factory import AudioPlayerFactory
 from audio.microphone import PyAudioMicrophone
@@ -25,17 +25,19 @@ from tools.web_search_tool import web_search_tool
 from tools.tool_registry import ToolRegistry
 
 from utils.logging_mixin import LoggingMixin
+from utils.event_bus import EventBus, EventType
 
 
 class OpenAIRealtimeAPI(LoggingMixin):
     """
     Class for managing OpenAI Realtime API communications.
-    With Tool-Registry integration.
+    With Tool-Registry integration and Event-Bus for communication.
 
     This class handles all the interaction with the OpenAI API including:
     - Managing the WebSocket communication through WebSocketManager
     - Sending audio data from the microphone
     - Processing responses including text, audio and tool calls
+    - Publishing events to the EventBus
     """
 
     def __init__(self):
@@ -55,6 +57,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
         self.audio_player = AudioPlayerFactory.get_shared_instance()
+        
+        # Get EventBus instance
+        self.event_bus = EventBus()
 
         self.logger.info("OpenAI Realtime API class initialized")
 
@@ -93,21 +98,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
     async def setup_and_run(
         self,
         mic_stream: PyAudioMicrophone,
-        handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-        handle_user_speech_started: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
-        handle_assistant_response: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
     ) -> bool:
         """
         Set up the connection and run the main loop.
+        Uses the EventBus for communication with other components.
 
         Args:
             mic_stream: A MicrophoneStream object for audio input
-            handle_transcript: Optional function to handle transcript responses
-            event_handler: Optional function to handle special events
 
         Returns:
             True on successful execution, False on error
@@ -122,11 +119,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         try:
             await asyncio.gather(
                 self.send_audio(mic_stream),
-                self.process_responses(
-                    handle_transcript=handle_transcript,
-                    handle_user_speech_started=handle_user_speech_started,
-                    handle_assistant_response=handle_assistant_response,
-                ),
+                self.process_responses(),
             )
 
             return True
@@ -212,22 +205,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Error while sending audio: %s", e)
 
-    async def process_responses(
-        self,
-        handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-        handle_user_speech_started: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
-        handle_assistant_response: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
-    ) -> None:
+    async def process_responses(self) -> None:
         """
-        Process responses from the OpenAI API.
-
-        Args:
-            handle_transcript: Optional function to handle transcript responses
-            event_handler: Optional function to handle special events
+        Process responses from the OpenAI API and publish events to the EventBus.
         """
         if not self.ws_manager.is_connected():
             self.logger.error("No connection available for processing responses")
@@ -235,12 +215,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         # Define a message handler for the WebSocketManager
         async def message_handler(message: str) -> None:
-            await self._process_single_message(
-                message=message,
-                handle_transcript=handle_transcript,
-                handle_user_speech_started=handle_user_speech_started,
-                handle_assistant_response=handle_assistant_response,
-            )
+            await self._process_single_message(message=message)
 
         # Use the WebSocketManager to receive messages
         await self.ws_manager.receive_messages(
@@ -248,24 +223,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
             should_continue=self.ws_manager.is_connected,
         )
 
-    async def _process_single_message(
-        self,
-        message: str,
-        handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
-        handle_user_speech_started: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
-        handle_assistant_response: Optional[
-            Callable[[str, Dict[str, Any]], None]
-        ] = None,
-    ) -> None:
+    async def _process_single_message(self, message: str) -> None:
         """
-        Process a single message from the API stream with simplified error logging.
-
+        Process a single message from the API stream and publish events.
+        
         Args:
             message: The raw message string received from the API
-            handle_transcript: Optional function to handle transcript responses
-            event_handler: Optional function to handle special events
         """
         try:
             self.logger.debug("Raw message received: %s...", message[:100])
@@ -275,14 +238,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 return
 
             event_type = response.get("type", "")
-
-            await self._route_event(
-                event_type,
-                response,
-                handle_transcript,
-                handle_user_speech_started,
-                handle_assistant_response,
-            )
+            await self._route_event(event_type, response)
 
         except json.JSONDecodeError as e:
             self.logger.warning("Received malformed JSON message: %s", e)
@@ -321,40 +277,25 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.warning("Warning: Received non-JSON message from server")
             return None
 
-    async def _route_event(
-            self,
-            event_type: str,
-            response: OpenAIRealtimeResponse,
-            handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
-            handle_user_speech_started: Optional[Callable[[str], None]] = None,
-            handle_assistant_response: Optional[Callable[[str], None]] = None,
-        ):
+    async def _route_event(self, event_type: str, response: OpenAIRealtimeResponse):
         """
         Route the event to the appropriate handler based on event type.
+        Uses EventBus to publish events to subscribers.
 
         Args:
             event_type: The type of event from the response
             response: The full response object
-            handle_transcript: Optional function to handle transcript responses
-            handle_user_speech_started: Optional function to handle when user starts speaking
-            handle_assistant_response: Optional function to handle when assistant completes response
         """
-        # Spezifische Handler für bestimmte Event-Typen
+        # Route events to EventBus based on event type
         if event_type == "input_audio_buffer.speech_started":
             self.logger.info("User speech started event received")
             self.audio_player.clear_queue_and_stop()
-
-            if handle_user_speech_started:
-                self.logger.info("Calling user speech started handler")
-                handle_user_speech_started()
+            await self.event_bus.publish_async(EventType.USER_SPEECH_STARTED)
             return
 
         if event_type == "response.done":
             self.logger.info("Assistant response completed event received")
-
-            if handle_assistant_response:
-                self.logger.info("Calling assistant response handler")
-                handle_assistant_response()
+            await self.event_bus.publish_async(EventType.ASSISTANT_RESPONSE_COMPLETED)
 
             if self._response_contains_tool_call(response):
                 await self.tool_handler.handle_function_call_in_response(
@@ -367,8 +308,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         if event_type == "response.audio_transcript.delta":
-            if handle_transcript:
-                handle_transcript(response)
+            await self.event_bus.publish_async(EventType.TRANSCRIPT_UPDATED, response)
             return
 
         if event_type == "conversation.item.truncated":

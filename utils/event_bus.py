@@ -3,6 +3,7 @@ Implementation of an Event Bus system to avoid property drilling.
 """
 from enum import Enum, auto
 import asyncio
+import inspect
 from typing import Dict, List, Callable, Any
 
 
@@ -18,9 +19,14 @@ class EventBus:
     """
     A central EventBus class that mediates events between components
     without them needing to know about each other.
+    
+    Features:
+    - Singleton pattern ensures a single event bus throughout the application
+    - Parameter-safe callback invocation handles different method signatures
+    - Support for both synchronous and asynchronous event publishing
     """
     _instance = None
-    _subscribers: Dict[EventType, List[Callable[[Any], None]]]
+    _subscribers: Dict[EventType, List[Callable]]
 
     def __new__(cls):
         if cls._instance is None:
@@ -28,7 +34,7 @@ class EventBus:
             cls._instance._subscribers = {event_type: [] for event_type in EventType}
         return cls._instance
 
-    def subscribe(self, event_type: EventType, callback: Callable[[Any], None]) -> None:
+    def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """
         Registers a callback for a specific event type.
         
@@ -38,7 +44,7 @@ class EventBus:
         """
         self._subscribers[event_type].append(callback)
 
-    def unsubscribe(self, event_type: EventType, callback: Callable[[Any], None]) -> None:
+    def unsubscribe(self, event_type: EventType, callback: Callable) -> None:
         """
         Removes a callback for a specific event type.
         
@@ -51,26 +57,59 @@ class EventBus:
 
     def publish(self, event_type: EventType, data: Any = None) -> None:
         """
-        Publishes an event to all registered subscribers.
+        Publishes an event to all registered subscribers with parameter-safe invocation.
         
         Args:
             event_type: The type of the event
             data: Optional data to pass to subscribers
         """
         for callback in self._subscribers[event_type]:
-            callback(data)
+            try:
+                self._safe_invoke_callback(callback, data)
+            except Exception as e:
+                print(f"Error invoking callback for event {event_type}: {e}")
 
     async def publish_async(self, event_type: EventType, data: Any = None) -> None:
         """
-        Publishes an event asynchronously to all registered subscribers.
+        Publishes an event asynchronously to all registered subscribers with parameter-safe invocation.
         
         Args:
             event_type: The type of the event
             data: Optional data to pass to subscribers
         """
         for callback in self._subscribers[event_type]:
-            if asyncio.iscoroutinefunction(callback):
-                return await callback(data)
-            
-            # Otherwise, execute it directly (optionally wrap in executor if heavy)
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await self._safe_invoke_async_callback(callback, data)
+                else:
+                    self._safe_invoke_callback(callback, data)
+            except Exception as e:
+                print(f"Error invoking async callback for event {event_type}: {e}")
+
+    def _safe_invoke_callback(self, callback: Callable, data: Any = None) -> None:
+        """
+        Safely invokes a callback by checking its signature and passing appropriate parameters.
+        
+        Args:
+            callback: The callback function to invoke
+            data: The data to pass to the callback if its signature accepts it
+        """
+        sig = inspect.signature(callback)
+        if len(sig.parameters) == 0:
+            callback()
+        else:
             callback(data)
+
+    async def _safe_invoke_async_callback(self, callback: Callable, data: Any = None) -> None:
+        """
+        Safely invokes an async callback by checking its signature and passing appropriate parameters.
+        
+        Args:
+            callback: The async callback function to invoke
+            data: The data to pass to the callback if its signature accepts it
+        """
+        sig = inspect.signature(callback)
+        if len(sig.parameters) == 0:
+            await callback()
+        else:
+            await callback(data)

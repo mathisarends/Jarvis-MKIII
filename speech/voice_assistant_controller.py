@@ -10,6 +10,7 @@ from audio.audio_player_factory import AudioPlayerFactory
 from realtime.realtime_api import OpenAIRealtimeAPI
 from speech.wake_word_listener import WakeWordListener
 
+from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
@@ -75,10 +76,23 @@ class VoiceAssistantController(LoggingMixin):
         self.should_stop = False
 
         self._transcript_text = ""
+        
+        self._initialize_event_bus()
 
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
         )
+        
+    def _initialize_event_bus(self):
+        """
+        Initialize the event bus for the voice assistant.
+        This method sets up the event bus and subscribes to necessary events.
+        """
+        self.event_bus = EventBus()
+        self.event_bus.subscribe(EventType.USER_SPEECH_STARTED, self.handle_user_speech_started)
+        self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response)
+        self.event_bus.subscribe(EventType.TRANSCRIPT_UPDATED, self._handle_transcript)
+        
 
     async def initialize(self):
         """
@@ -295,12 +309,10 @@ class VoiceAssistantController(LoggingMixin):
         self.audio_player.start()
 
     async def _start_api_processing(self):
-        """Start the OpenAI API processing"""
+        """Start the OpenAI API processing using the EventBus approach"""
+        # Einfach nur noch den MicStream übergeben, keine Callbacks mehr
         return await self.openai_api.setup_and_run(
             mic_stream=self.mic_stream,
-            handle_transcript=self._handle_transcript,
-            handle_user_speech_started=self.handle_user_speech_started,
-            handle_assistant_response=self.handle_assistant_response,
         )
 
     # TODO: not very clean
