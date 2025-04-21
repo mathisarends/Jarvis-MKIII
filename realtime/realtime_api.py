@@ -94,7 +94,12 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self,
         mic_stream: PyAudioMicrophone,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        handle_user_speech_started: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
+        handle_assistant_response: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
     ) -> bool:
         """
         Set up the connection and run the main loop.
@@ -119,7 +124,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 self.send_audio(mic_stream),
                 self.process_responses(
                     handle_transcript=handle_transcript,
-                    event_handler=event_handler,
+                    handle_user_speech_started=handle_user_speech_started,
+                    handle_assistant_response=handle_assistant_response,
                 ),
             )
 
@@ -208,15 +214,18 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
     async def process_responses(
         self,
-        handle_text: Optional[Callable[[Dict[str, Any]], None]] = None,
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
-        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        handle_user_speech_started: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
+        handle_assistant_response: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
     ) -> None:
         """
         Process responses from the OpenAI API.
 
         Args:
-            handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events
         """
@@ -228,9 +237,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
         async def message_handler(message: str) -> None:
             await self._process_single_message(
                 message=message,
-                handle_text=handle_text,
                 handle_transcript=handle_transcript,
-                event_handler=event_handler,
+                handle_user_speech_started=handle_user_speech_started,
+                handle_assistant_response=handle_assistant_response,
             )
 
         # Use the WebSocketManager to receive messages
@@ -242,16 +251,19 @@ class OpenAIRealtimeAPI(LoggingMixin):
     async def _process_single_message(
         self,
         message: str,
-        handle_text: Optional[Callable[[Dict[str, Any]], None]],
         handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
-        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        handle_user_speech_started: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
+        handle_assistant_response: Optional[
+            Callable[[str, Dict[str, Any]], None]
+        ] = None,
     ) -> None:
         """
         Process a single message from the API stream with simplified error logging.
 
         Args:
             message: The raw message string received from the API
-            handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
             event_handler: Optional function to handle special events
         """
@@ -267,9 +279,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
             await self._route_event(
                 event_type,
                 response,
-                handle_text,
                 handle_transcript,
-                event_handler,
+                handle_user_speech_started,
+                handle_assistant_response,
             )
 
         except json.JSONDecodeError as e:
@@ -310,53 +322,62 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return None
 
     async def _route_event(
-        self,
-        event_type: str,
-        response: OpenAIRealtimeResponse,
-        handle_text: Optional[Callable[[Dict[str, Any]], None]],
-        handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
-        event_handler: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-    ):
+            self,
+            event_type: str,
+            response: OpenAIRealtimeResponse,
+            handle_transcript: Optional[Callable[[Dict[str, Any]], None]],
+            handle_user_speech_started: Optional[Callable[[str], None]] = None,
+            handle_assistant_response: Optional[Callable[[str], None]] = None,
+        ):
         """
         Route the event to the appropriate handler based on event type.
 
         Args:
             event_type: The type of event from the response
             response: The full response object
-            handle_text: Optional function to handle text responses
             handle_transcript: Optional function to handle transcript responses
-            event_handler: Optional function to handle special events (propagated to controller)
+            handle_user_speech_started: Optional function to handle when user starts speaking
+            handle_assistant_response: Optional function to handle when assistant completes response
         """
-        if event_handler:
-            if event_type in ["input_audio_buffer.speech_started", "response.done"]:
-                print("Propagating the input started event")
-                event_handler(event_type)
-
+        # Spezifische Handler für bestimmte Event-Typen
         if event_type == "input_audio_buffer.speech_started":
+            self.logger.info("User speech started event received")
             self.audio_player.clear_queue_and_stop()
 
-        if event_type == "response.text.delta" and "delta" in response:
-            if handle_text:
-                handle_text(response)
+            if handle_user_speech_started:
+                self.logger.info("Calling user speech started handler")
+                handle_user_speech_started()
+            return
 
-        elif event_type == "response.audio.delta":
+        if event_type == "response.done":
+            self.logger.info("Assistant response completed event received")
+
+            if handle_assistant_response:
+                self.logger.info("Calling assistant response handler")
+                handle_assistant_response()
+
+            if self._response_contains_tool_call(response):
+                await self.tool_handler.handle_function_call_in_response(
+                    response, self.ws_manager.connection
+                )
+            return
+
+        if event_type == "response.audio.delta":
             self._handle_audio_delta(response)
+            return
 
-        elif event_type == "response.audio_transcript.delta":
+        if event_type == "response.audio_transcript.delta":
             if handle_transcript:
                 handle_transcript(response)
+            return
 
-        elif event_type == "response.done":
-            print("response", response)
-            # Speichere die Event-ID für spätere Truncate-Anfragen
-            if not self._response_contains_tool_call(response):
-                return
+        if event_type == "conversation.item.truncated":
+            # Bestätigung für erfolgreiches Truncation
+            event_id = response.get("event_id", "unknown")
+            self.logger.info("Truncation successful for event: %s", event_id)
+            return
 
-            await self.tool_handler.handle_function_call_in_response(
-                response, self.ws_manager.connection
-            )
-
-        elif event_type in ["error", "session.updated", "session.created"]:
+        if event_type in ["error", "session.updated", "session.created"]:
             self.logger.info("Event received: %s", event_type)
             if event_type == "error":
                 self.logger.error("API error: %s", response)
@@ -389,19 +410,19 @@ class OpenAIRealtimeAPI(LoggingMixin):
         """
         if response["type"] != "response.done":
             return False
-            
+
         if "response" not in response:
             return False
-            
+
         if "output" not in response["response"]:
             return False
-            
+
         output_items = response["response"]["output"]
         if not isinstance(output_items, list) or not output_items:
             return False
-            
+
         for item in output_items:
             if item.get("type") == "function_call":
                 return True
-                
+
         return False

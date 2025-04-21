@@ -64,12 +64,12 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 try:
                     if self.stream:
                         self.stream.close()
-                    
+
                     self.stream = self.p.open(
                         format=FORMAT,
                         channels=CHANNELS,
                         rate=RATE,
-                        output=True, 
+                        output=True,
                         frames_per_buffer=CHUNK,
                     )
                 except Exception as e2:
@@ -92,7 +92,9 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 continue
             except Exception as e:
                 error_traceback = traceback.format_exc()
-                self.logger.error("Error playing audio: %s\nTraceback:\n%s", e, error_traceback)
+                self.logger.error(
+                    "Error playing audio: %s\nTraceback:\n%s", e, error_traceback
+                )
 
     def _adjust_volume(self, audio_chunk):
         """Adjust the volume of an audio chunk"""

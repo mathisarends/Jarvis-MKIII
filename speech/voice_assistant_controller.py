@@ -14,7 +14,6 @@ from utils.logging_mixin import LoggingMixin
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
 
-# TODO: Herausfinden, warum ich den hier nicht mehr unterbrechen kann.
 class AssistantState(Enum):
     """Enumeration of possible assistant states"""
 
@@ -167,29 +166,6 @@ class VoiceAssistantController(LoggingMixin):
             self.logger.info("Manually stopping current conversation")
             self.conversation_active = False
 
-    def speech_activity_handler(self, response):
-        """
-        Handler for speech activity events from OpenAI API.
-
-        Args:
-            response: The event response from the API
-        """
-        event_type = response.get("type", "")
-
-        if event_type in [
-            "input_audio_buffer.speech_started",
-            "input_audio_buffer.speech_detected",
-        ]:
-            self._register_activity()
-            self.state = AssistantState.LISTENING
-            self.timeout_manager.handle_speech_started()
-
-        elif event_type in ["response.text.delta", "response.audio.delta"]:
-            self._register_activity()
-            self.state = AssistantState.RESPONDING
-            self.timeout_manager.handle_response_delta()
-
-
     def _register_activity(self):
         """
         Update the last activity timestamp and set activity event.
@@ -198,23 +174,16 @@ class VoiceAssistantController(LoggingMixin):
         self.timeout_manager.register_activity()
         self.activity_detected.set()
 
-    def _handle_api_event(self, event_type: str):
-        """
-        Handle special events from the OpenAI API.
-        """
-        self.logger.info("API EVENT RECEIVED: %s", event_type)
+    def handle_user_speech_started(self):
+        self._transcript_text = ""
+        self.state = AssistantState.LISTENING
+        self.timeout_manager.handle_speech_started()
 
-        if event_type == "input_audio_buffer.speech_started":
-            # Reset transcription when user starts speaking
-            self._transcript_text = ""
-            self.state = AssistantState.LISTENING
-            self.timeout_manager.handle_speech_started()
-
-        elif event_type == "response.done":
-            self.logger.info("Response completed event received")
-            # Handle response done in timeout manager
-            self.timeout_manager.handle_response_done(self._transcript_text)
-            self.state = AssistantState.RESPONDING
+    def handle_assistant_response(self):
+        self.logger.info("Response completed event received")
+        # Handle response done in timeout manager
+        self.timeout_manager.handle_response_done(self._transcript_text)
+        self.state = AssistantState.RESPONDING
 
     def _handle_transcript(self, response):
         """
@@ -330,7 +299,8 @@ class VoiceAssistantController(LoggingMixin):
         return await self.openai_api.setup_and_run(
             mic_stream=self.mic_stream,
             handle_transcript=self._handle_transcript,
-            event_handler=self._handle_api_event,
+            handle_user_speech_started=self.handle_user_speech_started,
+            handle_assistant_response=self.handle_assistant_response,
         )
 
     # TODO: not very clean
@@ -363,7 +333,7 @@ class VoiceAssistantController(LoggingMixin):
 
             except (asyncio.CancelledError, websockets.exceptions.ConnectionClosedOK):
                 self.logger.info("%s ended normally", task_name)
-                
+
             except Exception as e:
                 self.logger.error(
                     "Error in %s: %s - %s", task_name, type(e).__name__, e
@@ -400,7 +370,6 @@ class VoiceAssistantController(LoggingMixin):
         self.audio_player.stop()
         self.state = AssistantState.IDLE
         self.conversation_active = False
-        self.truncation_occurred = False
         self.logger.info("Returning to wake word listening mode")
 
 
@@ -471,13 +440,6 @@ class ConversationTimeoutManager(LoggingMixin):
         self._had_speech_activity = True
         self.logger.debug("Speech activity detected, set state to LISTENING")
 
-    def handle_response_delta(self):
-        """Handle response delta event"""
-        self.register_activity()
-        self.state = AssistantState.RESPONDING
-        # Important: Set user speech inactive when assistant starts responding
-        self._user_speech_active = False
-
     def handle_response_done(self, transcript_text) -> float:
         """
         Handle response done event
@@ -518,6 +480,8 @@ class ConversationTimeoutManager(LoggingMixin):
                 "No transcript available, using minimum wait time: %.2f seconds",
                 self.post_response_wait,
             )
+
+            print("self._expected_response_end_time", self._expected_response_end_time)
 
         self.state = AssistantState.RESPONDING
 

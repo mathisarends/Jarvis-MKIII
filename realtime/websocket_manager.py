@@ -127,9 +127,9 @@ class WebSocketManager(LoggingMixin):
                 "event_id": event_id,
                 "audio_end_ms": audio_end_ms,
             }
-            
+
             self.logger.debug("Sending truncate message: %s", message)
-            
+
             return await self.send_message(message)
 
         except Exception as e:
