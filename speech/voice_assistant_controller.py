@@ -88,7 +88,7 @@ class VoiceAssistantController(LoggingMixin):
         This method sets up the event bus and subscribes to necessary events.
         """
         self.event_bus = EventBus()
-        self.event_bus.subscribe(EventType.USER_SPEECH_STARTED, self.handle_user_speech_started)
+        self.event_bus.subscribe(EventType.USER_SPEECH_STARTED, self.timeout_manager.handle_speech_started)
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response)
         self.event_bus.subscribe(EventType.TRANSCRIPT_UPDATED, self._handle_transcript)
         
@@ -178,11 +178,6 @@ class VoiceAssistantController(LoggingMixin):
         if self.state != AssistantState.IDLE:
             self.logger.info("Manually stopping current conversation")
             self.conversation_active = False
-
-    def handle_user_speech_started(self):
-        self._transcript_text = ""
-        self.state = AssistantState.LISTENING
-        self.timeout_manager.handle_speech_started()
 
     def handle_assistant_response(self):
         self.logger.info("Response completed event received")
