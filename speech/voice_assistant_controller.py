@@ -14,6 +14,7 @@ from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
+
 class AssistantState(Enum):
     """Enumeration of possible assistant states"""
 
@@ -75,13 +76,13 @@ class VoiceAssistantController(LoggingMixin):
         self.should_stop = False
 
         self._transcript_text = ""
-        
+
         self._initialize_event_bus()
 
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
         )
-        
+
     def _initialize_event_bus(self):
         """
         Initialize the event bus for the voice assistant.
@@ -91,7 +92,6 @@ class VoiceAssistantController(LoggingMixin):
         self.event_bus.subscribe(EventType.USER_SPEECH_STARTED, self.timeout_manager.handle_speech_started)
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response)
         self.event_bus.subscribe(EventType.TRANSCRIPT_UPDATED, self._handle_transcript)
-        
 
     async def initialize(self):
         """
@@ -204,18 +204,23 @@ class VoiceAssistantController(LoggingMixin):
         """
         Monitor for inactivity to determine when to stop listening.
         Uses the timeout manager to determine if the conversation should timeout.
+        This task has the sole responsibility to end the conversation.
         """
-        while self.conversation_active and not self.should_stop:
-            # Check with timeout manager if we should timeout
-            should_timeout, reason = self.timeout_manager.should_timeout()
+        try:
+            while self.conversation_active and not self.should_stop:
+                should_timeout, reason = self.timeout_manager.should_timeout()
 
-            if should_timeout:
-                self.logger.info("Timeout detected: %s", reason)
-                self.conversation_active = False
-                break
+                if should_timeout:
+                    self.logger.info("Timeout detected: %s", reason)
+                    self.conversation_active = False
+                    break
 
-            # Small sleep to prevent CPU thrashing
-            await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            self.logger.error(
+                "Error in inactivity monitor: %s - %s", type(e).__name__, e
+            )
+            self.conversation_active = False
 
     async def _listen_for_wake_word_async(self):
         """
@@ -233,52 +238,42 @@ class VoiceAssistantController(LoggingMixin):
         """
         Handle a single conversation after wake word detection.
         Manages the entire conversation lifecycle from wake word detection to completion.
+        Only the inactivity monitor can end the conversation.
         """
         self.logger.info("Wake word detected! Starting conversation...")
         self._prepare_conversation()
 
-        # Main conversation loop - runs as long as the conversation is active
+        inactivity_task = asyncio.create_task(self._monitor_inactivity())
+
         while self.conversation_active and not self.should_stop:
             try:
-                inactivity_task = asyncio.create_task(self._monitor_inactivity())
                 api_task = asyncio.create_task(self._start_api_processing())
 
-                done, pending = await asyncio.wait(
-                    [inactivity_task, api_task], return_when=asyncio.FIRST_COMPLETED
-                )
-
-                self.logger.debug(
-                    "Tasks completed: %d, pending: %d", len(done), len(pending)
-                )
-
-                should_continue = await self._handle_completed_tasks(done)
-
-                if not should_continue:
-                    self.logger.info("Conversation ending as requested")
-                    break
-
-                # Cancel pending tasks
-                await self._cancel_pending_tasks(pending)
+                await api_task
 
                 await asyncio.sleep(0.1)
 
             except asyncio.CancelledError:
-                self.logger.info("Conversation handling was cancelled")
-                break
+                self.logger.info("API task was cancelled")
             except websockets.exceptions.ConnectionClosed as e:
                 self.logger.warning("WebSocket connection closed: %s", e)
-                break
-            except OSError as e:
-                self.logger.error("OS error during conversation: %s", e)
-                break
             except Exception as e:
                 self.logger.error(
-                    "Unexpected error during conversation: %s - %s", type(e).__name__, e
+                    "Unexpected error during API processing: %s - %s",
+                    type(e).__name__,
+                    e,
                 )
                 self.logger.debug(traceback.format_exc())
-                break
 
-        # After exiting the loop
+        self.logger.info("Conversation ended by inactivity monitor or manual stop")
+
+        if not inactivity_task.done():
+            inactivity_task.cancel()
+            try:
+                await inactivity_task
+            except asyncio.CancelledError:
+                pass
+
         self._cleanup_conversation()
 
     def _prepare_conversation(self):
@@ -297,7 +292,6 @@ class VoiceAssistantController(LoggingMixin):
             mic_stream=self.mic_stream,
         )
 
-    # TODO: not very clean
     async def _handle_completed_tasks(self, done):
         """
         Handle tasks that have completed.
@@ -308,22 +302,26 @@ class VoiceAssistantController(LoggingMixin):
         Returns:
             bool: True if conversation should continue, False if it should end
         """
+        inactivity_monitor_completed = False
+        api_task_completed = False
+
         for task in done:
-            task_name = (
-                "Inactivity monitor"
-                if task._coro.__name__ == "_monitor_inactivity"
-                else "API task"
+            is_inactivity_monitor = (
+                getattr(task._coro, "__name__", "") == "_monitor_inactivity"
             )
+            task_name = "Inactivity monitor" if is_inactivity_monitor else "API task"
+
             self.logger.info("%s completed", task_name)
 
             try:
                 task.result()
 
-                # If inactivity monitor ended, end the conversation
-                if task_name == "Inactivity monitor":
+                if is_inactivity_monitor:
+                    inactivity_monitor_completed = True
                     self.logger.info("Conversation ended due to inactivity")
                     self.conversation_active = False
-                    return False
+                else:
+                    api_task_completed = True
 
             except (asyncio.CancelledError, websockets.exceptions.ConnectionClosedOK):
                 self.logger.info("%s ended normally", task_name)
@@ -333,16 +331,14 @@ class VoiceAssistantController(LoggingMixin):
                     "Error in %s: %s - %s", task_name, type(e).__name__, e
                 )
 
-        # If conversation was explicitly ended
-        if not self.conversation_active:
+        # Entscheidungslogik
+        if not self.conversation_active or inactivity_monitor_completed:
             return False
 
-        # The critical change: For API task end AND truncation, continue conversation
-        if task_name == "API task":
+        if api_task_completed:
             return True
 
-        # For unexpected conditions or API task end without truncation
-        # (normal end of the API task), end the conversation
+        # Standard: Beende die Konversation
         return False
 
     async def _cancel_pending_tasks(self, pending):
@@ -456,8 +452,6 @@ class ConversationTimeoutManager(LoggingMixin):
                 "No transcript available, using minimum wait time: %.2f seconds",
                 self.post_response_wait,
             )
-
-            print("self._expected_response_end_time", self._expected_response_end_time)
 
         self.state = AssistantState.RESPONDING
 

@@ -1,6 +1,7 @@
 """
 Implementation of an Event Bus system to avoid property drilling.
 """
+
 from enum import Enum, auto
 import asyncio
 import inspect
@@ -9,6 +10,7 @@ from typing import Dict, List, Callable, Any
 
 class EventType(Enum):
     """Enumeration for all possible event types."""
+
     USER_SPEECH_STARTED = auto()
     ASSISTANT_RESPONSE_COMPLETED = auto()
     TRANSCRIPT_UPDATED = auto()
@@ -18,12 +20,13 @@ class EventBus:
     """
     A central EventBus class that mediates events between components
     without them needing to know about each other.
-    
+
     Features:
     - Singleton pattern ensures a single event bus throughout the application
     - Parameter-safe callback invocation handles different method signatures
     - Support for both synchronous and asynchronous event publishing
     """
+
     _instance = None
     _subscribers: Dict[EventType, List[Callable]]
 
@@ -36,7 +39,7 @@ class EventBus:
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """
         Registers a callback for a specific event type.
-        
+
         Args:
             event_type: The type of the event to subscribe to
             callback: The function to be called when the event is published
@@ -46,7 +49,7 @@ class EventBus:
     def unsubscribe(self, event_type: EventType, callback: Callable) -> None:
         """
         Removes a callback for a specific event type.
-        
+
         Args:
             event_type: The type of the event to unsubscribe from
             callback: The callback function to remove
@@ -57,7 +60,7 @@ class EventBus:
     def publish(self, event_type: EventType, data: Any = None) -> None:
         """
         Publishes an event to all registered subscribers with parameter-safe invocation.
-        
+
         Args:
             event_type: The type of the event
             data: Optional data to pass to subscribers
@@ -71,7 +74,7 @@ class EventBus:
     async def publish_async(self, event_type: EventType, data: Any = None) -> None:
         """
         Publishes an event asynchronously to all registered subscribers with parameter-safe invocation.
-        
+
         Args:
             event_type: The type of the event
             data: Optional data to pass to subscribers
@@ -88,7 +91,7 @@ class EventBus:
     def _safe_invoke_callback(self, callback: Callable, data: Any = None) -> None:
         """
         Safely invokes a callback by checking its signature and passing appropriate parameters.
-        
+
         Args:
             callback: The callback function to invoke
             data: The data to pass to the callback if its signature accepts it
@@ -99,10 +102,12 @@ class EventBus:
         else:
             callback(data)
 
-    async def _safe_invoke_async_callback(self, callback: Callable, data: Any = None) -> None:
+    async def _safe_invoke_async_callback(
+        self, callback: Callable, data: Any = None
+    ) -> None:
         """
         Safely invokes an async callback by checking its signature and passing appropriate parameters.
-        
+
         Args:
             callback: The async callback function to invoke
             data: The data to pass to the callback if its signature accepts it

@@ -14,6 +14,7 @@ from realtime.config import (
 from realtime.realtime_tool_handler import RealtimeToolHandler
 from realtime.typings import AudioDeltaResponse, OpenAIRealtimeResponse
 from realtime.websocket_manager import WebSocketManager
+from speech.converstation_duration_tracker import ConversationDurationTracker
 from tools.pomodoro.pomodoro_tool import (
     get_pomodoro_status,
     start_pomodoro_timer,
@@ -56,8 +57,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
         self.audio_player = AudioPlayerFactory.get_shared_instance()
-        
+
         self.event_bus = EventBus()
+
+        # Truncating logic
+        self.session_duration_tracker = ConversationDurationTracker()
+        self._current_response_start_time_ms = 0
+        self._last_assistant_message_item_id = ""
 
         self.logger.info("OpenAI Realtime API class initialized")
 
@@ -113,6 +119,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
         if not await self.initialize_session():
             await self.ws_manager.close()
             return False
+
+        self.session_duration_tracker.start_conversation()
 
         try:
             await asyncio.gather(
@@ -203,7 +211,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Error while sending audio: %s", e)
 
-
     async def process_responses(self) -> None:
         """
         Process responses from the OpenAI API and publish events to the EventBus.
@@ -213,31 +220,30 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.error("No connection available for processing responses")
             return
 
-
         await self.ws_manager.receive_messages(
             message_handler=self._handle_message,
             should_continue=self.ws_manager.is_connected,
         )
-        
+
     async def _handle_message(self, message: str) -> None:
         """
         Process a single message from the WebSocket stream and route it to the appropriate handler.
-        
+
         Args:
             message: The raw message string received from the API
         """
         try:
             self.logger.debug("Raw message received: %s...", message[:100])
-            
+
             response = json.loads(message)
-            
+
             if not isinstance(response, dict):
                 self.logger.warning("Response is not a dictionary: %s", type(response))
                 return
-                
+
             event_type = response.get("type", "")
             await self._route_event(event_type, response)
-                
+
         except json.JSONDecodeError as e:
             self.logger.warning("Received malformed JSON message: %s", e)
         except KeyError as e:
@@ -249,7 +255,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Unexpected error processing message: %s", e)
 
-
     async def _route_event(self, event_type: str, response: OpenAIRealtimeResponse):
         """
         Route the event to the appropriate handler based on event type.
@@ -259,21 +264,41 @@ class OpenAIRealtimeAPI(LoggingMixin):
             event_type: The type of event from the response
             response: The full response object
         """
-        if event_type == "input_audio_buffer.speech_started":
-            self.logger.info("User speech started event received")
-            self.audio_player.clear_queue_and_stop()
-            await self.event_bus.publish_async(EventType.USER_SPEECH_STARTED)
-            return
-
         if event_type == "response.done":
             self.logger.info("Assistant response completed event received")
             await self.event_bus.publish_async(EventType.ASSISTANT_RESPONSE_COMPLETED)
+
+            self._last_assistant_message_item_id = (
+                self._extract_assistant_message_item_id(response)
+            )
 
             if self._response_contains_tool_call(response):
                 await self.tool_handler.handle_function_call_in_response(
                     response, self.ws_manager.connection
                 )
             return
+
+        if event_type == "input_audio_buffer.speech_started":
+            self.logger.info("User speech started event received")
+
+            self.audio_player.clear_queue_and_stop()
+            await self.event_bus.publish_async(EventType.USER_SPEECH_STARTED)
+
+            if self._last_assistant_message_item_id:
+                await self.ws_manager.send_truncate_message(
+                    item_id=self._last_assistant_message_item_id,
+                    audio_end_ms=self.session_duration_tracker.duration_ms
+                    - self._current_response_start_time_ms,
+                )
+                
+            return
+
+        if event_type == "input_audio_buffer.speech_stopped":
+            self._current_response_start_time_ms = response.get("audio_end_ms", 0)
+            print(
+                "self._current_response_start_time_ms",
+                self._current_response_start_time_ms,
+            )
 
         if event_type == "response.audio.delta":
             self._handle_audio_delta(response)
@@ -284,8 +309,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         if event_type == "conversation.item.truncated":
-            event_id = response.get("event_id", "unknown")
-            self.logger.info("Truncation successful for event: %s", event_id)
+            self.logger.info("Conversation item truncated event received")
             return
 
         if event_type in ["error", "session.updated", "session.created"]:
@@ -308,6 +332,42 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         self.audio_player.add_audio_chunk(base64_audio)
+
+    def _extract_assistant_message_item_id(
+        self, response: OpenAIRealtimeResponse
+    ) -> str:
+        """
+        Extracts the message item ID from a response.done response.
+
+        Args:
+            response: The complete API response of type 'response.done'
+
+        Returns:
+            The message item ID or an empty string if no ID was found
+        """
+        if "response" not in response:
+            self.logger.debug("No 'response' field in the response")
+            return ""
+
+        if "output" not in response["response"]:
+            self.logger.debug("No 'output' field in response['response']")
+            return ""
+
+        output_items = response["response"]["output"]
+        if not isinstance(output_items, list) or not output_items:
+            self.logger.debug("Output items is not a valid list")
+            return ""
+
+        try:
+            for item in output_items:
+                if item.get("type") == "message" and "id" in item:
+                    return item["id"]
+
+            self.logger.debug("No message item with ID found in output items")
+            return ""
+        except Exception as e:
+            self.logger.error("Error extracting message item ID: %s", e)
+            return ""
 
     def _response_contains_tool_call(self, response):
         """

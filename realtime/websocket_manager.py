@@ -104,30 +104,30 @@ class WebSocketManager(LoggingMixin):
             self.logger.error("Error sending binary data: %s", e)
             return False
 
-    async def send_truncate_message(self, event_id: str, audio_end_ms: int) -> bool:
+    async def send_truncate_message(self, item_id: str, audio_end_ms: int) -> bool:
         """
         Send a message to truncate the audio stream.
 
         Args:
-            event_id: Unique identifier for the event
+            item_id: ID of the message item to truncate
             audio_end_ms: End time in milliseconds for the audio stream
 
         Returns:
             True if message was sent successfully, False otherwise
         """
         try:
-            self.logger.info(
-                "Truncate parameters - event_id: %s, audio_end_ms: %s",
-                event_id,
-                audio_end_ms,
-            )
-
             message = {
                 "type": "conversation.item.truncate",
-                "event_id": event_id,
+                "item_id": item_id,
+                "content_index": 0,
                 "audio_end_ms": audio_end_ms,
             }
 
+            self.logger.info(
+                "Truncate parameters - item_id: %s, audio_end_ms: %d",
+                item_id,
+                audio_end_ms,
+            )
             self.logger.debug("Sending truncate message: %s", message)
 
             return await self.send_message(message)
