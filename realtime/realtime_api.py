@@ -14,7 +14,6 @@ from realtime.config import (
 from realtime.realtime_tool_handler import RealtimeToolHandler
 from realtime.typings import AudioDeltaResponse, OpenAIRealtimeResponse
 from realtime.websocket_manager import WebSocketManager
-from speech.converstation_duration_tracker import ConversationDurationTracker
 from tools.pomodoro.pomodoro_tool import (
     get_pomodoro_status,
     start_pomodoro_timer,
@@ -56,11 +55,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
         self.audio_player = AudioPlayerFactory.get_shared_instance()
-
-        # Initialisiere den Konversationsdauer-Tracker
-        self.duration_tracker = ConversationDurationTracker()
-
-        self._last_message_event_id = ""
 
         self.logger.info("OpenAI Realtime API class initialized")
 
@@ -116,15 +110,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
         if not await self.ws_manager.create_connection():
             return False
 
-        self.duration_tracker.start_conversation()
-        self.logger.info(
-            "Started conversation tracking at %sms",
-            self.duration_tracker.current_time_ms,
-        )
-
         if not await self.initialize_session():
             await self.ws_manager.close()
-            self.duration_tracker.end_conversation()
             return False
 
         try:
@@ -141,13 +128,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.logger.info("Tasks were cancelled")
             return True
         finally:
-            # Beende den Tracker und protokolliere die Gesamtdauer
-            duration = self.duration_tracker.end_conversation()
-            self.logger.info(
-                "Conversation ended. Total duration: %dms (%.2fs)",
-                duration,
-                duration / 1000,
-            )
             await self.ws_manager.close()
 
     async def initialize_session(self) -> bool:
@@ -355,10 +335,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         if event_type == "input_audio_buffer.speech_started":
             # Stoppe die Audio-Wiedergabe
             self.audio_player.clear_queue_and_stop()
-            self.ws_manager.send_truncate_message(
-                event_id=self._last_message_event_id,
-                audio_end_ms=self.duration_tracker.current_time_ms,
-            )
 
         if event_type == "response.text.delta" and "delta" in response:
             if handle_text:
@@ -372,9 +348,8 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 handle_transcript(response)
 
         elif event_type == "response.done":
+            print("response", response)
             # Speichere die Event-ID für spätere Truncate-Anfragen
-            self._last_message_event_id = response.get("event_id", "")
-
             if not self._response_contains_tool_call(response):
                 return
 
@@ -408,7 +383,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.audio_player.add_audio_chunk(base64_audio)
 
-    def _response_contains_tool_call(self, response: OpenAIRealtimeResponse) -> bool:
+    def _response_contains_tool_call(self, response):
         """
         Check if the response contains a tool call.
 
@@ -418,8 +393,21 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Returns:
             True if the response contains a tool call, False otherwise
         """
-        return (
-            response["type"] == "response.done"
-            and "function_call" in response["response"]
-            and response["response"]["function_call"] is not None
-        )
+        if response["type"] != "response.done":
+            return False
+            
+        if "response" not in response:
+            return False
+            
+        if "output" not in response["response"]:
+            return False
+            
+        output_items = response["response"]["output"]
+        if not isinstance(output_items, list) or not output_items:
+            return False
+            
+        for item in output_items:
+            if item.get("type") == "function_call":
+                return True
+                
+        return False

@@ -122,7 +122,7 @@ class WebSocketManager(LoggingMixin):
                 audio_end_ms,
             )
 
-            """ message = {
+            message = {
                 "type": "conversation.item.truncate",
                 "event_id": event_id,
                 "audio_end_ms": audio_end_ms,
@@ -130,7 +130,7 @@ class WebSocketManager(LoggingMixin):
             
             self.logger.debug("Sending truncate message: %s", message)
             
-            return await self.send_message(message) """
+            return await self.send_message(message)
 
         except Exception as e:
             self.logger.error("Error sending truncate message: %s", e)
