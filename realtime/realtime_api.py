@@ -1,6 +1,6 @@
 import json
 import asyncio
-from typing import Optional, Dict, Any, List, cast
+from typing import Dict, Any, List, cast
 
 from audio.audio_player_factory import AudioPlayerFactory
 from audio.microphone import PyAudioMicrophone
@@ -205,41 +205,41 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Error while sending audio: %s", e)
 
+
     async def process_responses(self) -> None:
         """
         Process responses from the OpenAI API and publish events to the EventBus.
+        Simplified version with reduced boilerplate.
         """
         if not self.ws_manager.is_connected():
             self.logger.error("No connection available for processing responses")
             return
 
-        # Define a message handler for the WebSocketManager
-        async def message_handler(message: str) -> None:
-            await self._process_single_message(message=message)
 
-        # Use the WebSocketManager to receive messages
         await self.ws_manager.receive_messages(
-            message_handler=message_handler,
+            message_handler=self._handle_message,
             should_continue=self.ws_manager.is_connected,
         )
-
-    async def _process_single_message(self, message: str) -> None:
+        
+    async def _handle_message(self, message: str) -> None:
         """
-        Process a single message from the API stream and publish events.
+        Process a single message from the WebSocket stream and route it to the appropriate handler.
         
         Args:
             message: The raw message string received from the API
         """
         try:
             self.logger.debug("Raw message received: %s...", message[:100])
-
-            response = self._parse_response(message)
-            if not response:
+            
+            response = json.loads(message)
+            
+            if not isinstance(response, dict):
+                self.logger.warning("Response is not a dictionary: %s", type(response))
                 return
-
+                
             event_type = response.get("type", "")
             await self._route_event(event_type, response)
-
+                
         except json.JSONDecodeError as e:
             self.logger.warning("Received malformed JSON message: %s", e)
         except KeyError as e:
@@ -251,31 +251,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Unexpected error processing message: %s", e)
 
-    def _parse_response(self, message: str) -> Optional[Dict[str, Any]]:
-        """
-        Parse JSON response and validate it's a dictionary.
-
-        Args:
-            message: The raw message string received from the API
-
-        Returns:
-            Parsed dictionary or None if parsing failed
-        """
-        try:
-            response = json.loads(message)
-
-            if not isinstance(response, dict):
-                self.logger.warning(
-                    "Warning: Response is not a dictionary, it's %s",
-                    type(response),
-                )
-                return None
-
-            return response
-
-        except json.JSONDecodeError:
-            self.logger.warning("Warning: Received non-JSON message from server")
-            return None
 
     async def _route_event(self, event_type: str, response: OpenAIRealtimeResponse):
         """
@@ -286,7 +261,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             event_type: The type of event from the response
             response: The full response object
         """
-        # Route events to EventBus based on event type
         if event_type == "input_audio_buffer.speech_started":
             self.logger.info("User speech started event received")
             self.audio_player.clear_queue_and_stop()
@@ -312,7 +286,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         if event_type == "conversation.item.truncated":
-            # Bestätigung für erfolgreiches Truncation
             event_id = response.get("event_id", "unknown")
             self.logger.info("Truncation successful for event: %s", event_id)
             return
