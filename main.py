@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import random
 from dotenv import load_dotenv
 
 from audio.py_audio_player import PyAudioPlayer
@@ -33,7 +32,6 @@ async def main():
 
     try:
         await voice_assistant.run()
-        logger.info("Voice assistant is running...") # This print is important for interrupting logic (why idk)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt detected")
     finally:

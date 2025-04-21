@@ -76,8 +76,6 @@ class VoiceAssistantController(LoggingMixin):
         self.should_stop = False
 
         self._transcript_text = ""
-        self._is_responding = False
-        self._response_started_at = 0
 
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
@@ -191,10 +189,6 @@ class VoiceAssistantController(LoggingMixin):
             self.state = AssistantState.RESPONDING
             self.timeout_manager.handle_response_delta()
 
-            # If this is the first response chunk, note the start time
-            if not self._is_responding:
-                self._is_responding = True
-                self._response_started_at = time.time()
 
     def _register_activity(self):
         """
@@ -215,7 +209,6 @@ class VoiceAssistantController(LoggingMixin):
             
             # Reset transcription when user starts speaking
             self._transcript_text = ""
-            self._is_responding = False
             self.state = AssistantState.LISTENING
             self.timeout_manager.handle_speech_started()
 
@@ -253,7 +246,6 @@ class VoiceAssistantController(LoggingMixin):
             if should_timeout:
                 self.logger.info("Timeout detected: %s", reason)
                 self.conversation_active = False
-                print(f"\n[TIMEOUT] {reason}")
                 break
 
             # Small sleep to prevent CPU thrashing
@@ -331,7 +323,6 @@ class VoiceAssistantController(LoggingMixin):
         self.conversation_active = True
         self.state = AssistantState.LISTENING
         self._transcript_text = ""
-        self._is_responding = False
         self.timeout_manager.reset()
         self.mic_stream.start_stream()
         self.audio_player.start()
@@ -490,7 +481,7 @@ class ConversationTimeoutManager(LoggingMixin):
         # Important: Set user speech inactive when assistant starts responding
         self._user_speech_active = False
 
-    def handle_response_done(self, transcript_text):
+    def handle_response_done(self, transcript_text) -> float:
         """
         Handle response done event
 

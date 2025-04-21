@@ -329,6 +329,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         """
         if event_handler:
             if event_type in ["input_audio_buffer.speech_started", "response.done"]:
+                print("Propagating the input started event")
                 event_handler(event_type)
 
         # Then handle the events normally
