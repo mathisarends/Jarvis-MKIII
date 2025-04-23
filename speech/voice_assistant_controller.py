@@ -1,6 +1,4 @@
-from enum import Enum, auto
 import asyncio
-import threading
 import time
 import traceback
 import websockets
@@ -8,6 +6,7 @@ import websockets
 from audio.microphone import PyAudioMicrophone
 from audio.audio_player_factory import AudioPlayerFactory
 from realtime.realtime_api import OpenAIRealtimeAPI
+from speech.assistant_state import AssistantState
 from speech.wake_word_listener import WakeWordListener
 
 from utils.event_bus import EventBus, EventType
@@ -16,12 +15,46 @@ from utils.singleton_decorator import singleton
 from utils.speech_duration_estimator import SpeechDurationEstimator
 
 
-class AssistantState(Enum):
-    """Enumeration of possible assistant states"""
+class AssistantConfig:
+    """Configuration for the voice assistant"""
 
-    IDLE = auto()
-    LISTENING = auto()
-    RESPONDING = auto()
+    def __init__(
+        self,
+        wake_word="jarvis",
+        sensitivity=0.8,
+        initial_wait=5.0,
+        post_response_wait=10.0,
+        language="de",
+    ):
+        self.wake_word = wake_word
+        self.sensitivity = sensitivity
+        self.initial_wait = initial_wait
+        self.post_response_wait = post_response_wait
+        self.language = language
+
+
+class TranscriptManager:
+    """Manages conversation transcripts"""
+
+    def __init__(self):
+        self.current = ""
+        self.full = ""
+
+    def reset_current(self):
+        """Reset the current transcript"""
+        self.current = ""
+
+    def update(self, delta):
+        """Update transcripts with new text"""
+        if not delta:
+            return
+
+        self.current += delta
+        self.full += delta
+
+    def display_current(self):
+        """Display the current transcript to user"""
+        print(f"\rAssistant: {self.current}", end="", flush=True)
 
 
 @singleton
@@ -29,14 +62,11 @@ class VoiceAssistantController(LoggingMixin):
     """
     Controller for voice assistant that integrates wake word detection with OpenAI API.
 
-    This class coordinates the flow between wake word detection and OpenAI interaction,
-    managing the conversation lifecycle including:
-    - Wake word detection
-    - Managing conversation state
-    - Processing conversation responses
-    - Providing a continuous listening loop
-
-    Timeout and duration estimation logic is handled by ConversationTimeoutManager.
+    This class orchestrates the conversation flow between:
+    1. Wake word detection
+    2. User speech listening
+    3. API interaction
+    4. Response playback
     """
 
     def __init__(
@@ -47,21 +77,11 @@ class VoiceAssistantController(LoggingMixin):
         post_response_wait=10.0,
         language="de",
     ):
-        """
-        Initialize the voice assistant controller.
-
-        Args:
-            wake_word: The wake word to listen for
-            sensitivity: Sensitivity for wake word detection (0.0-1.0)
-            initial_wait: Seconds to wait initially after wake word before timing out
-            post_response_wait: Additional seconds to wait after estimated response time
-            language: Language code for speech duration estimation
-        """
-        self.wake_word = wake_word
-        self.sensitivity = sensitivity
-
-        # Create the timeout manager with our settings
-        self.timeout_manager = ConversationTimeoutManager(
+        """Initialize the voice assistant controller"""
+        # Initialize configuration
+        self.config = AssistantConfig(
+            wake_word=wake_word,
+            sensitivity=sensitivity,
             initial_wait=initial_wait,
             post_response_wait=post_response_wait,
             language=language,
@@ -71,100 +91,106 @@ class VoiceAssistantController(LoggingMixin):
         self.openai_api = None
         self.mic_stream = None
         self.audio_player = AudioPlayerFactory.get_shared_instance()
+        self.timeout_manager = ConversationTimeoutManager(
+            initial_wait=initial_wait,
+            post_response_wait=post_response_wait,
+            language=language,
+        )
+
+        self.transcript = TranscriptManager()
 
         self._state = AssistantState.IDLE
-        self.activity_detected = threading.Event()
-        self.conversation_active = False
-        self.should_stop = False
+        self._conversation_active = False
+        self._should_stop = False
 
-        self.full_transcript = ""
-        self._transcript_text = ""
-
-        self._initialize_event_bus()
+        self._setup_event_bus()
 
         self.logger.info(
             "Voice Assistant Controller initialized with wake word: %s", wake_word
         )
-        
+
     @property
     def state(self):
+        """Current state of the assistant"""
         return self._state
 
     @state.setter
-    def state(self, value):
-        if hasattr(self, '_state') and self._state == value:
+    def state(self, new_state):
+        """Set the assistant state and publish state change event"""
+        if hasattr(self, "_state") and self._state == new_state:
             return
-        
-        self._state = value
-        
-        if hasattr(self, 'event_bus'):
-            self.logger.debug("State changed to: %s", value)
-            self.event_bus.publish(EventType.STATE_CHANGED, value)
 
+        self._state = new_state
 
-    def _initialize_event_bus(self):
-        """
-        Initialize the event bus for the voice assistant.
-        This method sets up the event bus and subscribes to necessary events.
-        """
+        if hasattr(self, "event_bus"):
+            self.logger.debug("State changed to: %s", new_state)
+            self.event_bus.publish(EventType.STATE_CHANGED, new_state)
+
+    def _setup_event_bus(self):
+        """Configure event bus subscriptions"""
         self.event_bus = EventBus()
+
         self.event_bus.subscribe(
             EventType.USER_SPEECH_STARTED, self.timeout_manager.handle_speech_started
         )
         self.event_bus.subscribe(
-            EventType.ASSISTANT_RESPONSE_COMPLETED, self.handle_assistant_response
+            EventType.ASSISTANT_RESPONSE_COMPLETED,
+            self._handle_assistant_response_completed,
         )
-        self.event_bus.subscribe(EventType.TRANSCRIPT_UPDATED, self._handle_transcript)
+        self.event_bus.subscribe(
+            EventType.TRANSCRIPT_UPDATED, self._handle_transcript_update
+        )
 
     async def initialize(self):
-        """
-        Initialize all components of the voice assistant.
-
-        Returns:
-            True if initialization was successful, False otherwise
-        """
+        """Initialize all voice assistant components"""
         self.logger.info("Initializing voice assistant components...")
 
         try:
             self.wake_word_listener = WakeWordListener(
-                wakeword=self.wake_word, sensitivity=self.sensitivity
+                wakeword=self.config.wake_word, sensitivity=self.config.sensitivity
             )
+
+            self.openai_api = OpenAIRealtimeAPI()
+
+            self.mic_stream = PyAudioMicrophone()
+
+            self.logger.info("Voice assistant components initialized successfully")
+            return True
+
         except Exception as e:
-            self.logger.error("Failed to initialize wake word listener: %s", e)
+            self.logger.error("Failed to initialize voice assistant: %s", e)
             return False
 
-        self.openai_api = OpenAIRealtimeAPI()
-
-        # Initialize audio components
-        self.mic_stream = PyAudioMicrophone()
-
-        self.logger.info("Voice assistant components initialized successfully")
-        return True
-
     async def run(self):
-        """
-        Run the voice assistant main loop.
-        This is the main entry point that starts the continuous wake word detection
-        and conversation handling cycle.
-        """
+        """Run the main voice assistant loop"""
         if not await self.initialize():
             self.logger.error("Failed to initialize voice assistant")
             return
 
         self.logger.info(
-            "Voice assistant started. Listening for wake word: '%s'", self.wake_word
+            "Voice assistant started. Listening for wake word: '%s'",
+            self.config.wake_word,
         )
-        self.should_stop = False
+        self._should_stop = False
 
-        while not self.should_stop:
+        # Main assistant loop
+        await self._run_detection_loop()
+
+    async def _run_detection_loop(self):
+        """Main loop for wake word detection and conversation handling"""
+        while not self._should_stop:
             try:
                 self.state = AssistantState.IDLE
 
-                wake_word_detected = await self._listen_for_wake_word_async()
+                wake_word_detected = (
+                    await self.wake_word_listener.listen_for_wakeword_async()
+                )
 
                 if wake_word_detected:
                     self.audio_player.play_sound("wake_word")
-                    await self._handle_conversation()
+                    self.state = AssistantState.LISTENING
+
+                    await self._handle_conversation_lifecycle()
 
             except asyncio.CancelledError:
                 self.logger.info("Voice assistant task cancelled")
@@ -173,14 +199,104 @@ class VoiceAssistantController(LoggingMixin):
                 self.logger.error("Error in voice assistant loop: %s", e)
                 await asyncio.sleep(1)
 
+    async def _handle_conversation_lifecycle(self):
+        """Manage a single conversation from start to finish"""
+        self.logger.info("Wake word detected! Starting conversation...")
+
+        self._start_conversation()
+
+        inactivity_monitor = asyncio.create_task(self._monitor_conversation_activity())
+
+        while self._conversation_active and not self._should_stop:
+            try:
+                await self._process_speech_with_api()
+                await asyncio.sleep(0.1)
+
+            except asyncio.CancelledError:
+                self.logger.info("API processing task cancelled")
+            except websockets.exceptions.ConnectionClosed as e:
+                self.logger.warning("WebSocket connection closed: %s", e)
+            except Exception as e:
+                self.logger.error(
+                    "Error during API processing: %s - %s", type(e).__name__, e
+                )
+                self.logger.debug(traceback.format_exc())
+
+        self.logger.info("Conversation ended")
+
+        if not inactivity_monitor.done():
+            inactivity_monitor.cancel()
+            try:
+                await inactivity_monitor
+            except asyncio.CancelledError:
+                pass
+
+        # Clean up conversation resources
+        self._end_conversation()
+
+    def _start_conversation(self):
+        """Set up a new conversation"""
+        self._conversation_active = True
+        self.state = AssistantState.LISTENING
+        self.transcript.reset_current()
+        self.timeout_manager.reset()
+        self.mic_stream.start_stream()
+        self.audio_player.start()
+
+    def _end_conversation(self):
+        """Clean up conversation resources"""
+        self.mic_stream.stop_stream()
+        self.audio_player.stop()
+        self.state = AssistantState.IDLE
+        self._conversation_active = False
+        self.logger.info("Returning to wake word listening mode")
+
+    async def _process_speech_with_api(self):
+        """Send audio to API and process response"""
+        return await self.openai_api.setup_and_run(
+            mic_stream=self.mic_stream,
+        )
+
+    async def _monitor_conversation_activity(self):
+        """Monitor for inactivity to determine when to end conversation"""
+        try:
+            while self._conversation_active and not self._should_stop:
+                should_timeout, reason = self.timeout_manager.should_timeout()
+
+                if should_timeout:
+                    self.logger.info("Timeout detected: %s", reason)
+                    self._conversation_active = False
+                    break
+
+                await asyncio.sleep(0.1)
+
+        except Exception as e:
+            self.logger.error("Error in activity monitor: %s - %s", type(e).__name__, e)
+            self._conversation_active = False
+
+    def _handle_assistant_response_completed(self, transcript_text):
+        """Handle when assistant response is complete"""
+        if transcript_text:
+            self.transcript.current = transcript_text
+
+        self.timeout_manager.handle_response_done(self.transcript.current)
+
+        self.state = AssistantState.RESPONDING
+
+    def _handle_transcript_update(self, response):
+        """Process transcript updates from the API"""
+        delta = response.get("delta", "")
+        if not delta:
+            return
+
+        self.transcript.update(delta)
+        self.transcript.display_current()
+
     async def stop(self):
-        """
-        Stop the voice assistant gracefully.
-        Cleans up all resources and stops all ongoing processes.
-        """
+        """Stop the voice assistant and cleanup resources"""
         self.logger.info("Stopping voice assistant...")
-        self.should_stop = True
-        self.conversation_active = False
+        self._should_stop = True
+        self._conversation_active = False
 
         if self.wake_word_listener:
             self.wake_word_listener.cleanup()
@@ -194,151 +310,10 @@ class VoiceAssistantController(LoggingMixin):
         self.logger.info("Voice assistant stopped")
 
     async def stop_current_conversation(self):
-        """
-        Stop the current conversation and return to wake word listening mode.
-        This can be called from external components to interrupt the conversation.
-        """
+        """Manually stop the current conversation"""
         if self.state != AssistantState.IDLE:
             self.logger.info("Manually stopping current conversation")
-            self.conversation_active = False
-
-    def handle_assistant_response(self, transcript_text) -> None:
-        # this is necassary for the timeout manager to estimate the response duration, overwhise the
-        # whole converstation would just be appended
-        if transcript_text:
-            self._transcript_text = transcript_text
-
-        self.timeout_manager.handle_response_done(self._transcript_text)
-        self.state = AssistantState.RESPONDING
-
-    def _handle_transcript(self, response):
-        """
-        Handle transcript responses from OpenAI API.
-
-        Args:
-            response: The transcript response from the API
-        """
-        delta = response.get("delta", "")
-        if not delta:
-            return
-
-        self._transcript_text += delta
-        self.full_transcript += delta
-
-        print(f"\rAssistant: {self._transcript_text}", end="", flush=True)
-
-    async def _monitor_inactivity(self):
-        """
-        Monitor for inactivity to determine when to stop listening.
-        Uses the timeout manager to determine if the conversation should timeout.
-        This task has the sole responsibility to end the conversation.
-        """
-        try:
-            while self.conversation_active and not self.should_stop:
-                should_timeout, reason = self.timeout_manager.should_timeout()
-
-                if should_timeout:
-                    self.logger.info("Timeout detected: %s", reason)
-                    self.conversation_active = False
-                    break
-
-                await asyncio.sleep(0.1)
-        except Exception as e:
-            self.logger.error(
-                "Error in inactivity monitor: %s - %s", type(e).__name__, e
-            )
-            self.conversation_active = False
-
-    async def _listen_for_wake_word_async(self):
-        """
-        Listen for wake word in a way that doesn't block the event loop.
-
-        Returns:
-            True if wake word was detected, False otherwise
-        """
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, self.wake_word_listener.listen_for_wakeword
-        )
-
-    async def _handle_conversation(self):
-        """
-        Handle a single conversation after wake word detection.
-        Manages the entire conversation lifecycle from wake word detection to completion.
-        Only the inactivity monitor can end the conversation.
-        """
-        self.logger.info("Wake word detected! Starting conversation...")
-        self._prepare_conversation()
-
-        inactivity_task = asyncio.create_task(self._monitor_inactivity())
-
-        while self.conversation_active and not self.should_stop:
-            try:
-                api_task = asyncio.create_task(self._start_api_processing())
-
-                await api_task
-
-                await asyncio.sleep(0.1)
-
-            except asyncio.CancelledError:
-                self.logger.info("API task was cancelled")
-            except websockets.exceptions.ConnectionClosed as e:
-                self.logger.warning("WebSocket connection closed: %s", e)
-            except Exception as e:
-                self.logger.error(
-                    "Unexpected error during API processing: %s - %s",
-                    type(e).__name__,
-                    e,
-                )
-                self.logger.debug(traceback.format_exc())
-
-        self.logger.info("Conversation ended by inactivity monitor or manual stop")
-
-        if not inactivity_task.done():
-            inactivity_task.cancel()
-            try:
-                await inactivity_task
-            except asyncio.CancelledError:
-                pass
-
-        self._cleanup_conversation()
-
-    def _prepare_conversation(self):
-        """Set up conversation state and required components"""
-        self.conversation_active = True
-        self.state = AssistantState.LISTENING
-        self._transcript_text = ""
-        self.timeout_manager.reset()
-        self.mic_stream.start_stream()
-        self.audio_player.start()
-
-    async def _start_api_processing(self):
-        """Start the OpenAI API processing using the EventBus approach"""
-        # Einfach nur noch den MicStream übergeben, keine Callbacks mehr
-        return await self.openai_api.setup_and_run(
-            mic_stream=self.mic_stream,
-        )
-
-    async def _cancel_pending_tasks(self, pending):
-        """Cancel any pending tasks"""
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                self.logger.warning(
-                    "Error while cancelling task: %s - %s", type(e).__name__, e
-                )
-
-    def _cleanup_conversation(self):
-        """Clean up resources after conversation ends"""
-        self.mic_stream.stop_stream()
-        self.audio_player.stop()
-        self.state = AssistantState.IDLE
-        self.conversation_active = False
-        self.logger.info("Returning to wake word listening mode")
+            self._conversation_active = False
 
 
 class ConversationTimeoutManager(LoggingMixin):

@@ -22,7 +22,7 @@ async def clipboard_tool(prompt: str) -> str:
     """
     # Get transcript from voice assistant
     from speech.voice_assistant_controller import VoiceAssistantController
-    
+
     voice_assistant_controller = VoiceAssistantController()
     transcript = voice_assistant_controller.full_transcript
 

@@ -12,6 +12,7 @@ import pygame
 
 from audio.audio_player_base import AudioPlayer
 from realtime.config import FORMAT, CHANNELS, CHUNK, RATE
+from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
 
 
@@ -27,6 +28,8 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.sounds_dir = sounds_dir
         self.current_audio_data = bytes()
         self.volume = 1.0
+        self.is_busy = False
+        self.event_bus = EventBus()
 
     @override
     def start(self):
@@ -81,13 +84,34 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         """Thread loop for playing audio chunks"""
         while self.is_playing:
             try:
-                chunk = self.audio_queue.get(timeout=0.5)
+                if self.audio_queue.empty() and not self.is_busy:
+                    try:
+                        chunk = self.audio_queue.get(timeout=0.5)
+                    except queue.Empty:
+                        continue
+                else:
+                    chunk = self.audio_queue.get(timeout=0.5)
+
                 if chunk:
+                    was_busy = self.is_busy
+                    self.is_busy = True
+                    
+                    if not was_busy:
+                        self.event_bus.publish_async_from_thread(EventType.AUDIO_PLAYBACK_STARTED)
+                        self.logger.debug("Audio playback started")
+                    
                     adjusted_chunk = self._adjust_volume(chunk)
-                    # Store the current chunk
                     self.current_audio_data = adjusted_chunk
                     self.stream.write(adjusted_chunk)
+                    
                 self.audio_queue.task_done()
+                
+                if self.audio_queue.empty() and self.is_busy:
+                    self.is_busy = False
+                    self.current_audio_data = bytes()
+                    self.event_bus.publish_async_from_thread(EventType.AUDIO_PLAYBACK_STOPPED)
+                    self.logger.debug("Audio playback stopped")
+                
             except queue.Empty:
                 continue
             except Exception as e:
@@ -95,6 +119,10 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 self.logger.error(
                     "Error playing audio: %s\nTraceback:\n%s", e, error_traceback
                 )
+                
+                if self.is_busy:
+                    self.is_busy = False
+                    self.event_bus.publish_async(EventType.AUDIO_PLAYBACK_STOPPED)
 
     def _adjust_volume(self, audio_chunk):
         """Adjust the volume of an audio chunk"""
@@ -102,10 +130,8 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             return audio_chunk
 
         try:
-            # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_chunk, dtype=np.int16)
 
-            # Apply volume adjustment
             adjusted_array = (audio_array * self.volume).astype(np.int16)
 
             # Convert back to bytes

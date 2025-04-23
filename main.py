@@ -18,17 +18,13 @@ async def main():
         print("Error: OPENAI_API_KEY not found in .env file")
         return
 
-    if not os.getenv("PICO_ACCESS_KEY"):
-        print("Error: PICO_ACCESS_KEY not found in .env file")
-        return
-
     setup_logging()
     logger = logging.getLogger("main")
 
     logger.info("Starting voice assistant...")
 
     AudioPlayerFactory.initialize_with(PyAudioPlayer)
-    
+
     _ = LightController()
 
     voice_assistant = VoiceAssistantController(wake_word="jarvis", sensitivity=0.7)

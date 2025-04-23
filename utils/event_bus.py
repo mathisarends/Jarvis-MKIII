@@ -5,6 +5,7 @@ Implementation of an Event Bus system to avoid property drilling.
 from enum import Enum, auto
 import asyncio
 import inspect
+import threading
 from typing import Dict, List, Callable, Any
 
 
@@ -15,6 +16,8 @@ class EventType(Enum):
     ASSISTANT_RESPONSE_COMPLETED = auto()
     TRANSCRIPT_UPDATED = auto()
     STATE_CHANGED = auto()
+    AUDIO_PLAYBACK_STARTED = auto()
+    AUDIO_PLAYBACK_STOPPED = auto()
 
 
 class EventBus:
@@ -88,6 +91,72 @@ class EventBus:
                     self._safe_invoke_callback(callback, data)
             except Exception as e:
                 print(f"Error invoking async callback for event {event_type}: {e}")
+                
+    def publish_async_from_thread(self, event_type: EventType, data: Any = None) -> None:
+        """
+        Thread-safe method to asynchronously publish events.
+        Can be called from synchronous contexts.
+
+        Args:
+            event_type: The type of the event
+            data: Optional data to pass to subscribers
+        """
+        sync_subscribers = [cb for cb in self._subscribers[event_type] 
+                        if not asyncio.iscoroutinefunction(cb)]
+        
+        for callback in sync_subscribers:
+            try:
+                self._safe_invoke_callback(callback, data)
+            except Exception as e:
+                print(f"Error invoking sync callback from thread: {e}")
+        
+        async_subscribers = [cb for cb in self._subscribers[event_type]
+                        if asyncio.iscoroutinefunction(cb)]
+        
+        if not async_subscribers:
+            return
+        
+        try:
+            if threading.current_thread() is not threading.main_thread():
+                loop = asyncio.get_event_loop()
+                loop.call_soon_threadsafe(
+                    lambda: self._schedule_async_callbacks(async_subscribers, data)
+                )
+            else:
+                self._schedule_async_callbacks(async_subscribers, data)
+                
+        except Exception as e:
+            print(f"Error in publish_async_from_thread: {e}")
+            # Fallback: Verwende synchrones Publishen
+            self.publish(event_type, data)
+
+    def _schedule_async_callbacks(self, callbacks, data):
+        """
+        Schedules the execution of asynchronous callbacks in the current event loop.
+
+        Args:
+            callbacks: List of async callbacks to be executed
+            data: Data to be passed to each callback
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._execute_async_callbacks(callbacks, data))
+        except Exception as e:
+            print(f"Error scheduling async callbacks: {e}")
+
+    async def _execute_async_callbacks(self, callbacks, data):
+        """
+        Executes asynchronous callbacks.
+
+        Args:
+            callbacks: List of async callbacks to be executed
+            data: Data to be passed to each callback
+        """
+        for callback in callbacks:
+            try:
+                await self._safe_invoke_async_callback(callback, data)
+            except Exception as e:
+                print(f"Error executing async callback: {e}")
 
     def _safe_invoke_callback(self, callback: Callable, data: Any = None) -> None:
         """

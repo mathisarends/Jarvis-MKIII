@@ -12,24 +12,23 @@ class WakeWordListener:
         self.logger = logging.getLogger(self.__class__.__name__)
 
         if not 0.0 <= sensitivity <= 1.0:
-            raise ValueError("Sensitivity muss zwischen 0.0 und 1.0 liegen")
+            raise ValueError("Sensitivity must be between 0.0 and 1.0")
 
         self.logger.info(
-            "🔧 Initialisiere Wake-Word Listener mit Wort: %s (Sensitivity: %.1f)",
+            "🔧 Initializing Wake Word Listener with word: %s (Sensitivity: %.1f)",
             wakeword,
             sensitivity,
         )
 
         access_key = os.getenv("PICO_ACCESS_KEY")
         if not access_key:
-            raise ValueError("PICO_ACCESS_KEY nicht in .env Datei gefunden")
+            raise ValueError("PICO_ACCESS_KEY not found in .env file")
 
         self.wakeword = wakeword
         self.handle = pvporcupine.create(
             access_key=access_key, keywords=[wakeword], sensitivities=[0.8]
         )
 
-        # Separate PyAudio-Instanz für Input
         self.pa_input = pyaudio.PyAudio()
         self.stream = self.pa_input.open(
             format=pyaudio.paInt16,
@@ -40,7 +39,6 @@ class WakeWordListener:
             stream_callback=self._audio_callback,
         )
 
-        # Flags für Status
         self.is_listening = False
         self.should_stop = False
         self._detection_event = threading.Event()
@@ -53,7 +51,7 @@ class WakeWordListener:
         return False
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
-        """Callback für Audio-Processing"""
+        """Callback for audio processing"""
         if self.is_listening and not self.should_stop:
             pcm = np.frombuffer(in_data, dtype=np.int16)
             keyword_index = self.handle.process(pcm)
@@ -63,23 +61,33 @@ class WakeWordListener:
 
         return (in_data, pyaudio.paContinue)
 
-    def listen_for_wakeword(self):
+    async def listen_for_wakeword_async(self):
+        """
+        Asynchronous version of listen_for_wakeword that doesn't block the event loop.
+
+        Returns:
+            True if wake word was detected, False otherwise
+        """
+        import asyncio
+
         self._detection_event.clear()
         self.is_listening = True
 
         if not self.stream.is_active():
             self.stream.start_stream()
 
-        # Warten auf Erkennung
         while not self.should_stop:
-            if self._detection_event.wait(timeout=0.1):
+            detected = self._detection_event.is_set()
+            if detected:
                 self._detection_event.clear()
                 return True
+
+            await asyncio.sleep(0.1)
 
         return False
 
     def cleanup(self):
-        self.logger.info("🧹 Räume Wake-Word-Listener auf...")
+        self.logger.info("🧹 Cleaning up Wake Word Listener...")
         self.should_stop = True
         self.is_listening = False
 
@@ -91,14 +99,4 @@ class WakeWordListener:
         if self.handle:
             self.handle.delete()
 
-        self.logger.info("✅ Wake-Word-Listener erfolgreich beendet")
-
-
-if __name__ == "__main__":
-    listener = WakeWordListener()
-    try:
-        while True:
-            if listener.listen_for_wakeword():
-                print("Wakeword erkannt!")
-    except KeyboardInterrupt:
-        listener.cleanup()
+        self.logger.info("✅ Wake Word Listener successfully shut down")
