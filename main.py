@@ -25,7 +25,7 @@ async def main():
 
     AudioPlayerFactory.initialize_with(PyAudioPlayer)
 
-    _ = LightController()
+    LightController()
 
     voice_assistant = VoiceAssistantController(wake_word="jarvis", sensitivity=0.7)
 

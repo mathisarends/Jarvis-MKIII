@@ -8,18 +8,25 @@ import inspect
 import threading
 from typing import Dict, List, Callable, Any
 
+from utils.singleton_decorator import singleton
+
 
 class EventType(Enum):
     """Enumeration for all possible event types."""
 
     USER_SPEECH_STARTED = auto()
+    USER_SPEECH_ENDED = auto()
     ASSISTANT_RESPONSE_COMPLETED = auto()
     TRANSCRIPT_UPDATED = auto()
-    STATE_CHANGED = auto()
-    AUDIO_PLAYBACK_STARTED = auto()
-    AUDIO_PLAYBACK_STOPPED = auto()
+
+    ASSISTANT_STARTED_RESPONDING = auto()
+    ASSISTANT_COMPLETED_RESPONDING = auto()
+
+    WAKE_WORD_DETECTED = auto()
+    IDLE_TRANSITION = auto()
 
 
+@singleton
 class EventBus:
     """
     A central EventBus class that mediates events between components
@@ -31,14 +38,12 @@ class EventBus:
     - Support for both synchronous and asynchronous event publishing
     """
 
-    _instance = None
     _subscribers: Dict[EventType, List[Callable]]
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(EventBus, cls).__new__(cls)
-            cls._instance._subscribers = {event_type: [] for event_type in EventType}
-        return cls._instance
+    def __init__(self):
+        self._subscribers: Dict[EventType, List[Callable]] = {
+            event_type: [] for event_type in EventType
+        }
 
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """
@@ -91,8 +96,10 @@ class EventBus:
                     self._safe_invoke_callback(callback, data)
             except Exception as e:
                 print(f"Error invoking async callback for event {event_type}: {e}")
-                
-    def publish_async_from_thread(self, event_type: EventType, data: Any = None) -> None:
+
+    def publish_async_from_thread(
+        self, event_type: EventType, data: Any = None
+    ) -> None:
         """
         Thread-safe method to asynchronously publish events.
         Can be called from synchronous contexts.
@@ -101,21 +108,27 @@ class EventBus:
             event_type: The type of the event
             data: Optional data to pass to subscribers
         """
-        sync_subscribers = [cb for cb in self._subscribers[event_type] 
-                        if not asyncio.iscoroutinefunction(cb)]
-        
+        sync_subscribers = [
+            cb
+            for cb in self._subscribers[event_type]
+            if not asyncio.iscoroutinefunction(cb)
+        ]
+
         for callback in sync_subscribers:
             try:
                 self._safe_invoke_callback(callback, data)
             except Exception as e:
                 print(f"Error invoking sync callback from thread: {e}")
-        
-        async_subscribers = [cb for cb in self._subscribers[event_type]
-                        if asyncio.iscoroutinefunction(cb)]
-        
+
+        async_subscribers = [
+            cb
+            for cb in self._subscribers[event_type]
+            if asyncio.iscoroutinefunction(cb)
+        ]
+
         if not async_subscribers:
             return
-        
+
         try:
             if threading.current_thread() is not threading.main_thread():
                 loop = asyncio.get_event_loop()
@@ -124,7 +137,7 @@ class EventBus:
                 )
             else:
                 self._schedule_async_callbacks(async_subscribers, data)
-                
+
         except Exception as e:
             print(f"Error in publish_async_from_thread: {e}")
             # Fallback: Verwende synchrones Publishen

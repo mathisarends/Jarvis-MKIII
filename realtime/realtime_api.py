@@ -300,17 +300,11 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         if event_type == "input_audio_buffer.speech_stopped":
             self._current_response_start_time_ms = response.get("audio_end_ms", 0)
-            print(
-                "self._current_response_start_time_ms",
-                self._current_response_start_time_ms,
-            )
+            self.event_bus.publish(event_type=EventType.USER_SPEECH_ENDED)
+            return
 
         if event_type == "response.audio.delta":
             self._handle_audio_delta(response)
-            return
-
-        if event_type == "response.audio_transcript.delta":
-            await self.event_bus.publish_async(EventType.TRANSCRIPT_UPDATED, response)
             return
 
         if event_type == "conversation.item.truncated":
@@ -337,69 +331,3 @@ class OpenAIRealtimeAPI(LoggingMixin):
             return
 
         self.audio_player.add_audio_chunk(base64_audio)
-
-    # TODO: Das hier alles in eine Methode DoneMessage Klasse machen und auch das Trasncript muss überschrieben werden und nicht immer wieder appended.
-    def _extract_assistant_message_item_id(
-        self, response: OpenAIRealtimeResponse
-    ) -> str:
-        """
-        Extracts the message item ID from a response.done response.
-
-        Args:
-            response: The complete API response of type 'response.done'
-
-        Returns:
-            The message item ID or an empty string if no ID was found
-        """
-        if "response" not in response:
-            self.logger.debug("No 'response' field in the response")
-            return ""
-
-        if "output" not in response["response"]:
-            self.logger.debug("No 'output' field in response['response']")
-            return ""
-
-        output_items = response["response"]["output"]
-        if not isinstance(output_items, list) or not output_items:
-            self.logger.debug("Output items is not a valid list")
-            return ""
-
-        try:
-            for item in output_items:
-                if item.get("type") == "message" and "id" in item:
-                    return item["id"]
-
-            self.logger.debug("No message item with ID found in output items")
-            return ""
-        except Exception as e:
-            self.logger.error("Error extracting message item ID: %s", e)
-            return ""
-
-    def _response_contains_tool_call(self, response):
-        """
-        Check if the response contains a tool call.
-
-        Args:
-            response: The API response to check
-
-        Returns:
-            True if the response contains a tool call, False otherwise
-        """
-        if response["type"] != "response.done":
-            return False
-
-        if "response" not in response:
-            return False
-
-        if "output" not in response["response"]:
-            return False
-
-        output_items = response["response"]["output"]
-        if not isinstance(output_items, list) or not output_items:
-            return False
-
-        for item in output_items:
-            if item.get("type") == "function_call":
-                return True
-
-        return False

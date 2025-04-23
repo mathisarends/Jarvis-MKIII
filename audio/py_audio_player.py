@@ -95,23 +95,27 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 if chunk:
                     was_busy = self.is_busy
                     self.is_busy = True
-                    
+
                     if not was_busy:
-                        self.event_bus.publish_async_from_thread(EventType.AUDIO_PLAYBACK_STARTED)
+                        self.event_bus.publish_async_from_thread(
+                            EventType.ASSISTANT_STARTED_RESPONDING
+                        )
                         self.logger.debug("Audio playback started")
-                    
+
                     adjusted_chunk = self._adjust_volume(chunk)
                     self.current_audio_data = adjusted_chunk
                     self.stream.write(adjusted_chunk)
-                    
+
                 self.audio_queue.task_done()
-                
+
                 if self.audio_queue.empty() and self.is_busy:
                     self.is_busy = False
                     self.current_audio_data = bytes()
-                    self.event_bus.publish_async_from_thread(EventType.AUDIO_PLAYBACK_STOPPED)
+                    self.event_bus.publish_async_from_thread(
+                        EventType.ASSISTANT_COMPLETED_RESPONDING
+                    )
                     self.logger.debug("Audio playback stopped")
-                
+
             except queue.Empty:
                 continue
             except Exception as e:
@@ -119,10 +123,12 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 self.logger.error(
                     "Error playing audio: %s\nTraceback:\n%s", e, error_traceback
                 )
-                
+
                 if self.is_busy:
                     self.is_busy = False
-                    self.event_bus.publish_async(EventType.AUDIO_PLAYBACK_STOPPED)
+                    self.event_bus.publish_async(
+                        EventType.ASSISTANT_COMPLETED_RESPONDING
+                    )
 
     def _adjust_volume(self, audio_chunk):
         """Adjust the volume of an audio chunk"""
