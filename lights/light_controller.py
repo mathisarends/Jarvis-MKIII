@@ -102,7 +102,6 @@ class LightController(LoggingMixin):
         """
         self.event_bus = EventBus()
 
-        # Subscribe using wrapper methods that handle async execution
         self.event_bus.subscribe(
             event_type=EventType.WAKE_WORD_DETECTED,
             callback=self._handle_wake_word_detected,
@@ -251,5 +250,6 @@ class LightController(LoggingMixin):
         """
         Updates the stored 'normal' state to the current light state.
         """
-        await self._save_normal_state()
+        self.logger.info("Assistant stopped responding, refreshing normal state")
+        await self.room_controller.restore_state(save_id=self.saved_wake_word_detected_normal_state_id)
         self.logger.info("Normal state updated to current light state")
