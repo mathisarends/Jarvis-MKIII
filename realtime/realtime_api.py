@@ -16,6 +16,7 @@ from realtime.typings.done_message import DoneMessage
 from realtime.typings.typings import AudioDeltaResponse, OpenAIRealtimeResponse
 from realtime.websocket_manager import WebSocketManager
 from speech.converstation_duration_tracker import ConversationDurationTracker
+from tools.stop_conversation_tool import stop_conversation_tool
 from tools.pomodoro.pomodoro_tool import (
     get_pomodoro_status,
     start_pomodoro_timer,
@@ -74,6 +75,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Initialize the tool registry and register all available tools.
         """
         try:
+            self.tool_registry.register_tool(stop_conversation_tool)
             """self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
             self.tool_registry.register_tool(set_volume_tool)

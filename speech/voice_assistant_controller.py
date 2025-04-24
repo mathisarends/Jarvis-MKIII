@@ -283,6 +283,10 @@ class VoiceAssistantController(LoggingMixin):
         self.logger.info("Assistant stopped responding")
         self._assistant_is_speaking = False
         self._update_activity_time()
+        
+    # Useful for stop tool
+    def stop_conversation_loop(self):
+        self._conversation_active = False
 
     async def stop(self):
         """Stop voice assistant and release resources"""
