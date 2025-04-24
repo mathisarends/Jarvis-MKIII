@@ -39,7 +39,7 @@ class TranscriptManager:
     def current(self):
         """Get the current transcript"""
         return self._current
-    
+
     @current.setter
     def current(self, value):
         """Set the current transcript"""
@@ -48,6 +48,7 @@ class TranscriptManager:
     def reset_current(self):
         """Reset the current transcript"""
         self._current = ""
+
 
 @singleton
 class VoiceAssistantController(LoggingMixin):
@@ -65,7 +66,6 @@ class VoiceAssistantController(LoggingMixin):
         language="de",
     ):
         """Initialize the voice assistant controller"""
-        # Initialize configuration
         self.config = AssistantConfig(
             wake_word=wake_word,
             sensitivity=sensitivity,
@@ -73,7 +73,6 @@ class VoiceAssistantController(LoggingMixin):
             language=language,
         )
 
-        # Components
         self.wake_word_listener = None
         self.openai_api = None
         self.mic_stream = None
@@ -81,13 +80,11 @@ class VoiceAssistantController(LoggingMixin):
 
         self.transcript = TranscriptManager()
 
-        # Status flags
         self._conversation_active = False
         self._should_stop = False
         self._user_is_speaking = False
         self._assistant_is_speaking = False
-        
-        # Simple timeout tracking
+
         self._last_activity_time = 0
 
         self._setup_event_bus()
@@ -109,14 +106,13 @@ class VoiceAssistantController(LoggingMixin):
             callback=self._handle_audio_playback_stopped,
         )
 
-        # Speech recognition events
         self.event_bus.subscribe(
             EventType.USER_SPEECH_STARTED, self._handle_user_speech_started
         )
         self.event_bus.subscribe(
             EventType.USER_SPEECH_ENDED, self._handle_user_speech_ended
         )
-        
+
         self.event_bus.subscribe(
             EventType.ASSISTANT_RESPONSE_COMPLETED,
             self._handle_assistant_response_completed,
@@ -153,7 +149,6 @@ class VoiceAssistantController(LoggingMixin):
         )
         self._should_stop = False
 
-        # Main assistant loop
         await self._run_detection_loop()
 
     async def _run_detection_loop(self):
@@ -182,27 +177,26 @@ class VoiceAssistantController(LoggingMixin):
     async def _handle_conversation(self):
         """Manage a single conversation from start to finish"""
         self._start_conversation()
-        
+
         # Erstelle einen separaten Task für die Timeout-Überwachung
         timeout_task = asyncio.create_task(self._monitor_timeout())
         api_task = asyncio.create_task(self._process_speech_with_api())
-        
+
         try:
             done, pending = await asyncio.wait(
-                [api_task, timeout_task], 
-                return_when=asyncio.FIRST_COMPLETED
+                [api_task, timeout_task], return_when=asyncio.FIRST_COMPLETED
             )
-            
+
             for task in pending:
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
                     pass
-        
+
         except Exception as e:
             self.logger.error("Error in conversation handling: %s", e)
-        
+
         finally:
             self._end_conversation()
             self.logger.info("Conversation ended, returning to main loop")
@@ -210,13 +204,20 @@ class VoiceAssistantController(LoggingMixin):
     async def _monitor_timeout(self):
         """Monitor idle timeout in a separate task"""
         while self._conversation_active and not self._should_stop:
-            if not self._user_is_speaking and not self._assistant_is_speaking:
-                idle_time = time.time() - self._last_activity_time
-                
-                if idle_time > self.config.idle_timeout:
-                    self._conversation_active = False
-                    return
-            
+            if self._user_is_speaking or self._assistant_is_speaking:
+                await asyncio.sleep(0.5)
+                continue
+
+            idle_time = time.time() - self._last_activity_time
+
+            if idle_time > self.config.idle_timeout:
+                self.logger.info(
+                    "Idle timeout reached after %.1f seconds. Ending conversation.",
+                    idle_time,
+                )
+                self._conversation_active = False
+                return
+
             await asyncio.sleep(0.5)
 
     def _start_conversation(self):

@@ -19,6 +19,7 @@ from utils.logging_mixin import LoggingMixin
 class PyAudioPlayer(AudioPlayer, LoggingMixin):
     """PyAudio implementation of the AudioPlayerBase class with sound file playback"""
 
+    @override
     def __init__(self, sounds_dir="sounds"):
         self.p = pyaudio.PyAudio()
         self.stream = None
@@ -64,87 +65,36 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 self.stream.start_stream()
             except Exception as e:
                 self.logger.error("Error while pausing/resuming audio stream: %s", e)
-                try:
-                    if self.stream:
-                        self.stream.close()
-
-                    self.stream = self.p.open(
-                        format=FORMAT,
-                        channels=CHANNELS,
-                        rate=RATE,
-                        output=True,
-                        frames_per_buffer=CHUNK,
-                    )
-                except Exception as e2:
-                    self.logger.error("Failed to recreate audio stream: %s", e2)
+                self._recreate_audio_stream()
 
         self.logger.info("Audio queue cleared, stream kept alive.")
 
-    def _play_audio_loop(self):
-        """Thread loop for playing audio chunks"""
-        while self.is_playing:
-            try:
-                if self.audio_queue.empty() and not self.is_busy:
-                    try:
-                        chunk = self.audio_queue.get(timeout=0.5)
-                    except queue.Empty:
-                        continue
-                else:
-                    chunk = self.audio_queue.get(timeout=0.5)
+    @override
+    def set_volume_level(self, volume: float):
+        """
+        Set the volume level for the audio player.
 
-                if chunk:
-                    was_busy = self.is_busy
-                    self.is_busy = True
+        Args:
+            volume: Volume level between 0.0 (mute) and 1.0 (maximum)
+        """
+        self.volume = max(0.0, min(1.0, volume))
+        self.logger.info("Volume set to: %.2f", self.volume)
 
-                    if not was_busy:
-                        self.event_bus.publish_async_from_thread(
-                            EventType.ASSISTANT_STARTED_RESPONDING
-                        )
-                        self.logger.debug("Audio playback started")
+        # Update pygame mixer volume if initialized
+        if pygame.mixer.get_init():
+            pygame.mixer.music.set_volume(self.volume)
 
-                    adjusted_chunk = self._adjust_volume(chunk)
-                    self.current_audio_data = adjusted_chunk
-                    self.stream.write(adjusted_chunk)
+        return self.volume
 
-                self.audio_queue.task_done()
+    @override
+    def get_volume_level(self) -> float:
+        """
+        Get the current volume level of the audio player.
 
-                if self.audio_queue.empty() and self.is_busy:
-                    self.is_busy = False
-                    self.current_audio_data = bytes()
-                    self.event_bus.publish_async_from_thread(
-                        EventType.ASSISTANT_COMPLETED_RESPONDING
-                    )
-                    self.logger.debug("Audio playback stopped")
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                error_traceback = traceback.format_exc()
-                self.logger.error(
-                    "Error playing audio: %s\nTraceback:\n%s", e, error_traceback
-                )
-
-                if self.is_busy:
-                    self.is_busy = False
-                    self.event_bus.publish_async(
-                        EventType.ASSISTANT_COMPLETED_RESPONDING
-                    )
-
-    def _adjust_volume(self, audio_chunk):
-        """Adjust the volume of an audio chunk"""
-        if abs(self.volume - 1.0) < 1e-6:
-            return audio_chunk
-
-        try:
-            audio_array = np.frombuffer(audio_chunk, dtype=np.int16)
-
-            adjusted_array = (audio_array * self.volume).astype(np.int16)
-
-            # Convert back to bytes
-            return adjusted_array.tobytes()
-        except Exception as e:
-            self.logger.error("Error adjusting volume: %s", e)
-            return audio_chunk
+        Returns:
+            The current volume level between 0.0 and 1.0
+        """
+        return self.volume
 
     @override
     def add_audio_chunk(self, base64_audio):
@@ -189,7 +139,6 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
 
-            # Get sound object and adjust volume
             sound = pygame.mixer.Sound(sound_path)
             sound.set_volume(self.volume)
             sound.play()
@@ -200,29 +149,122 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             self.logger.error("Error playing sound %s: %s", sound_name, e)
             return False
 
-    @override
-    def set_volume_level(self, volume: float):
-        """
-        Set the volume level for the audio player.
+    def _recreate_audio_stream(self):
+        """Recreate the audio stream if there was an error"""
+        try:
+            if self.stream:
+                self.stream.close()
 
-        Args:
-            volume: Volume level between 0.0 (mute) and 1.0 (maximum)
-        """
-        self.volume = max(0.0, min(1.0, volume))
-        self.logger.info("Volume set to: %.2f", self.volume)
+            self.stream = self.p.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                output=True,
+                frames_per_buffer=CHUNK,
+            )
+        except Exception as e:
+            self.logger.error("Failed to recreate audio stream: %s", e)
 
-        # Update pygame mixer volume if initialized
-        if pygame.mixer.get_init():
-            pygame.mixer.music.set_volume(self.volume)
+    def _play_audio_loop(self):
+        """Thread loop for playing audio chunks"""
+        while self.is_playing:
+            try:
+                # Get the next audio chunk
+                chunk = self._get_next_audio_chunk()
+                if not chunk:
+                    continue
 
-        return self.volume
+                # Process the chunk
+                self._process_audio_chunk(chunk)
 
-    @override
-    def get_volume_level(self) -> float:
-        """
-        Get the current volume level of the audio player.
+                # Mark task as done and check queue state
+                self.audio_queue.task_done()
+                self._check_queue_state()
 
-        Returns:
-            The current volume level between 0.0 and 1.0
-        """
-        return self.volume
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self._handle_playback_error(e)
+
+    def _get_next_audio_chunk(self):
+        """Get the next audio chunk from the queue"""
+        if self.audio_queue.empty() and not self.is_busy:
+            try:
+                return self.audio_queue.get(timeout=0.5)
+            except queue.Empty:
+                return None
+        else:
+            return self.audio_queue.get(timeout=0.5)
+
+    def _process_audio_chunk(self, chunk):
+        """Process and play an audio chunk"""
+        if not chunk:
+            return
+
+        was_busy = self.is_busy
+        self.is_busy = True
+
+        if not was_busy:
+            self.event_bus.publish_async_from_thread(
+                EventType.ASSISTANT_STARTED_RESPONDING
+            )
+            self.logger.debug("Audio playback started")
+
+        adjusted_chunk = self._adjust_volume(chunk)
+        self.current_audio_data = adjusted_chunk
+        self.stream.write(adjusted_chunk)
+
+    def _check_queue_state(self):
+        """Check the queue state and notify if playback is completed"""
+        if self.audio_queue.empty() and self.is_busy:
+            self.is_busy = False
+            self.current_audio_data = bytes()
+            self._safely_notify_playback_completed()
+
+    def _handle_playback_error(self, error):
+        """Handle any errors during playback"""
+        error_traceback = traceback.format_exc()
+        self.logger.error(
+            "Error playing audio: %s\nTraceback:\n%s", error, error_traceback
+        )
+
+        if self.is_busy:
+            self.is_busy = False
+            try:
+                self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
+            except Exception as e:
+                self.logger.error("Failed to publish playback complete event: %s", e)
+
+    def _adjust_volume(self, audio_chunk):
+        """Adjust the volume of an audio chunk"""
+        if abs(self.volume - 1.0) < 1e-6:
+            return audio_chunk
+
+        try:
+            audio_array = np.frombuffer(audio_chunk, dtype=np.int16)
+            adjusted_array = (audio_array * self.volume).astype(np.int16)
+            return adjusted_array.tobytes()
+        except Exception as e:
+            self.logger.error("Error adjusting volume: %s", e)
+            return audio_chunk
+
+    def _get_sound_path(self, sound_name):
+        """Get the full path to a sound file"""
+        if not sound_name.endswith(".mp3"):
+            sound_name += ".mp3"
+        return os.path.join(self.sounds_dir, sound_name)
+
+    def _safely_notify_playback_completed(self):
+        """Send playback completed event in a thread-safe way"""
+        try:
+            self.event_bus.publish_async_from_thread(
+                EventType.ASSISTANT_COMPLETED_RESPONDING
+            )
+            self.logger.debug("Audio playback stopped (event sent)")
+        except Exception as e:
+            self.logger.warning("Failed to send event from thread: %s", e)
+            try:
+                self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
+                self.logger.debug("Audio playback stopped (event sent via fallback)")
+            except Exception as e2:
+                self.logger.error("Failed to send event via fallback: %s", e2)

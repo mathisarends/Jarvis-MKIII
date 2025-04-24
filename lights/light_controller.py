@@ -73,7 +73,7 @@ class LightController(LoggingMixin):
                 self.room_controller.name,
             )
 
-            # Save current state as "normal"
+            # Save current state as "normal" (TODO: Muss hier eigentlich häufiger gemacht werden?)
             await self._save_normal_state()
 
         except Exception as e:
@@ -137,7 +137,7 @@ class LightController(LoggingMixin):
         self.logger.info("LIGHT: Switching to ASSISTANT_RESPODNDING mode")
 
     def _handle_assistant_completed_responding(self):
-        self.loop.create_task(self.subtle_light_change_on_assistant_response())
+        self.loop.create_task(self.revert_subtle_light_change())
         self.current_mode = LightMode.WAKE_WORD_DETECTED
         self.logger.info("LIGHT: Switching to ASSISTANT_RESPODNDING mode")
 
@@ -236,6 +236,7 @@ class LightController(LoggingMixin):
             )
             self.logger.info("Reverted subtle color changes")
             self.subtle_change_state_id = None
+            self.current_mode = LightMode.WAKE_WORD_DETECTED
         except Exception as e:
             error_details = (
                 f"Error reverting subtle light changes: {e}\n{traceback.format_exc()}"
@@ -251,5 +252,7 @@ class LightController(LoggingMixin):
         Updates the stored 'normal' state to the current light state.
         """
         self.logger.info("Assistant stopped responding, refreshing normal state")
-        await self.room_controller.restore_state(save_id=self.saved_wake_word_detected_normal_state_id)
+        await self.room_controller.restore_state(
+            save_id=self.saved_wake_word_detected_normal_state_id
+        )
         self.logger.info("Normal state updated to current light state")
