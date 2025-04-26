@@ -6,11 +6,9 @@ from typing import Optional
 
 from audio.audio_player_factory import AudioPlayerFactory
 from utils.logging_mixin import LoggingMixin
-from utils.singleton_decorator import singleton
+from utils.singleton_meta_class import SingletonMetaClass
 
-
-@singleton
-class PomodoroTimerManager(LoggingMixin):
+class PomodoroTimerManager(LoggingMixin, metaclass=SingletonMetaClass):
     def __init__(self):
         self.duration_seconds = 0
         self.is_running = False

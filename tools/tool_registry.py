@@ -1,15 +1,13 @@
 import inspect
 
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
-from langchain.tools import tool as langchain_tool
 
 from utils.logging_mixin import LoggingMixin
-from utils.singleton_decorator import singleton
+from utils.singleton_meta_class import SingletonMetaClass
 
 
-@singleton
-class ToolRegistry(LoggingMixin):
+class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
     """
     Registry for LangChain tools that manages them and can convert them into OpenAI function format.
     """

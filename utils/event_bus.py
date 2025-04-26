@@ -8,7 +8,8 @@ import inspect
 import threading
 from typing import Dict, List, Callable, Any
 
-from utils.singleton_decorator import singleton
+from utils.singleton_meta_class import SingletonMetaClass
+
 
 
 class EventType(Enum):
@@ -28,8 +29,8 @@ class EventType(Enum):
     IDLE_TRANSITION = auto()
 
 
-@singleton
-class EventBus:
+
+class EventBus(metaclass=SingletonMetaClass):
     """
     A central EventBus class that mediates events between components
     without them needing to know about each other.

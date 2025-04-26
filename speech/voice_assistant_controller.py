@@ -9,7 +9,7 @@ from speech.wake_word_listener import WakeWordListener
 
 from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
-from utils.singleton_decorator import singleton
+from utils.singleton_meta_class import SingletonMetaClass
 
 
 class AssistantConfig:
@@ -28,8 +28,7 @@ class AssistantConfig:
         self.language = language
 
 
-@singleton
-class VoiceAssistantController(LoggingMixin):
+class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
     """
     Controller for voice assistant that integrates wake word detection with OpenAI API.
 

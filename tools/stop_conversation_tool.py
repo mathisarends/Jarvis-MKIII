@@ -1,10 +1,6 @@
-import random
 import time
 import threading
 from langchain.tools import tool
-
-from audio.audio_player_factory import AudioPlayerFactory
-
 
 @tool
 def stop_conversation_tool() -> str:
@@ -22,11 +18,11 @@ def stop_conversation_tool() -> str:
 
     def delayed_stop():
         time.sleep(4)
-        controller = VoiceAssistantController()
+        controller = VoiceAssistantController.get_instance()
         controller.stop_conversation_loop()
 
     stop_thread = threading.Thread(target=delayed_stop)
-    stop_thread.daemon = True  # Thread wird beendet, wenn das Hauptprogramm endet
+    stop_thread.daemon = True
     stop_thread.start()
 
     return "Conversation will end in a few seconds."
