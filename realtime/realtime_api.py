@@ -24,6 +24,7 @@ from tools.pomodoro.pomodoro_tool import (
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
 from tools.clipboard_tool import clipboard_tool
+from tools.volume_tool import set_volume_tool, get_volume_tool
 from tools.tool_registry import ToolRegistry
 
 from utils.logging_mixin import LoggingMixin
@@ -54,7 +55,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
 
         self.ws_manager = WebSocketManager(OPENAI_WEBSOCKET_URL, OPENAI_HEADERS)
 
-        self.tool_registry = ToolRegistry()
+        self.tool_registry = ToolRegistry.get_instance()
         self._init_tool_registry()
 
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
@@ -74,14 +75,13 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Initialize the tool registry and register all available tools.
         """
         try:
-            # TODO: test this logic here.
             self.tool_registry.register_tool(stop_conversation_tool)
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
             self.tool_registry.register_tool(pomodoro_tool)
             self.tool_registry.register_tool(clipboard_tool)
-            """ self.tool_registry.register_tool(set_volume_tool)
-            self.tool_registry.register_tool(get_volume_tool) """
+            self.tool_registry.register_tool(set_volume_tool)
+            self.tool_registry.register_tool(get_volume_tool)
 
             self.logger.info("All tools successfully registered")
         except Exception as e:

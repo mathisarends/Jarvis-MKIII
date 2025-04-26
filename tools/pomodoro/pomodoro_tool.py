@@ -65,10 +65,10 @@ def _handle_start_action(
         return f"A timer is already running with {remaining} minutes remaining. Stop it first if you want to start a new one."
 
     duration = action_json.get("duration_minutes", DEFAULT_POMODORO_MINUTES)
-    
+
     if duration == 25 and "duration_minutes" not in action_json:
         duration = DEFAULT_POMODORO_MINUTES
-        
+
     # Limits einhalten
     duration = max(1, min(120, duration))
 
@@ -114,7 +114,7 @@ def pomodoro_tool(input_text: str) -> str:
 
     This tool interprets user requests to start, stop, or check pomodoro timers.
     It uses an LLM internally to determine what the user wants to do.
-    
+
     The default Pomodoro duration is 90 minutes unless otherwise specified.
 
     Examples:

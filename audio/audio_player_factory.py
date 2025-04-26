@@ -4,7 +4,7 @@ from audio.audio_player_base import AudioPlayer
 
 T = TypeVar("T", bound="AudioPlayer")
 
-
+# Überlegen ob man das hier auch wirklich braucht aber ich könnte mir schon vorstellen.
 class AudioPlayerFactory:
     """
     Factory for managing a singleton instance of an AudioPlayer.

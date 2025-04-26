@@ -1,11 +1,10 @@
 import asyncio
-import logging
 import os
 from dotenv import load_dotenv
 
 from audio.py_audio_player import PyAudioPlayer
 from audio.audio_player_factory import AudioPlayerFactory
-from utils.logging_mixin import setup_logging
+from lights.light_controller import LightController
 from speech.voice_assistant_controller import VoiceAssistantController
 
 
@@ -17,24 +16,21 @@ async def main():
         print("Error: OPENAI_API_KEY not found in .env file")
         return
 
-    setup_logging()
-    logger = logging.getLogger("main")
-
-    logger.info("Starting voice assistant...")
+    print("Starting voice assistant...")
 
     AudioPlayerFactory.initialize_with(PyAudioPlayer)
-
-    """ LightController() """
-
-    voice_assistant = VoiceAssistantController(wake_word="picovoice", sensitivity=0.7)
+    await LightController.create(room_identifier="Zimmer 1")
 
     try:
+        voice_assistant = VoiceAssistantController(
+            wake_word="picovoice", sensitivity=0.7
+        )
         await voice_assistant.run()
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt detected")
+        print("Keyboard interrupt detected")
     finally:
         await voice_assistant.stop()
-        logger.info("Application terminated")
+        print("Application terminated")
 
 
 if __name__ == "__main__":

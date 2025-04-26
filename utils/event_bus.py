@@ -12,20 +12,34 @@ from utils.singleton_meta_class import SingletonMetaClass
 
 
 class EventType(Enum):
-    """Enumeration for all possible event types."""
+    """
+    Enumeration for all possible event types in the voice assistant system.
+    These events drive the interaction flow between user and assistant.
+    """
 
     USER_SPEECH_STARTED = auto()
-    USER_SPEECH_ENDED = auto()
+    """Triggered when the user begins speaking after wake word detection."""
 
-    # Used for extraction of full transcript, when the asistant stopped responding
+    USER_SPEECH_ENDED = auto()
+    """Triggered when the user stops speaking, indicating input is complete."""
+
     ASSISTANT_RESPONSE_COMPLETED = auto()
+    """Triggered when all processing of the assistant's response is finished."""
+
     USER_INPUT_TRANSCRIPTION_COMPLETED = auto()
+    """Triggered when the speech-to-text transcription of user input is complete."""
 
     ASSISTANT_STARTED_RESPONDING = auto()
+    """Triggered when the assistant begins generating/speaking its response."""
+
     ASSISTANT_COMPLETED_RESPONDING = auto()
+    """Triggered when the assistant finishes speaking its response."""
 
     WAKE_WORD_DETECTED = auto()
+    """Triggered when the system detects the wake word that activates the assistant."""
+
     IDLE_TRANSITION = auto()
+    """Triggered when the system returns to idle state after completed interaction or timeout."""
 
 
 class EventBus(metaclass=SingletonMetaClass):
