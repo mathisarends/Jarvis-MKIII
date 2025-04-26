@@ -27,7 +27,9 @@ async def main():
     """ await LightController.create() """
 
     try:
-        voice_assistant = VoiceAssistantController(wake_word="picovoice", sensitivity=0.7)
+        voice_assistant = VoiceAssistantController(
+            wake_word="picovoice", sensitivity=0.7
+        )
         await voice_assistant.run()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt detected")

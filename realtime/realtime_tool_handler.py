@@ -1,6 +1,6 @@
 import json
 from json import JSONDecodeError
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, Literal, TypedDict
 from websockets.legacy.client import WebSocketClientProtocol
 
 from langchain_core.tools import BaseTool
@@ -8,8 +8,29 @@ from langchain_core.tools import BaseTool
 from utils.logging_mixin import LoggingMixin
 from tools.tool_registry import ToolRegistry
 
-from realtime.typings.typings import DoneResponseWithToolCall, FunctionCallItem
+class DoneResponseWithToolCall(TypedDict):
+    """
+    Represents a completed response that includes a tool call result.
+    """
+    type: Literal["response.done"]
+    response: Dict[str, Any]
 
+
+class FunctionCallItem(TypedDict):
+    """
+    Represents an item that triggers a function call.
+
+    Attributes:
+        type: A fixed string indicating this is a 'function_call' type.
+        name: The optional name of the function to be called.
+        call_id: A unique identifier for this function call.
+        arguments: A serialized string (e.g., JSON) containing the arguments to pass to the function.
+    """
+    type: Literal["function_call"]
+    name: Optional[str]
+    call_id: str
+    arguments: str
+    
 
 class RealtimeToolHandler(LoggingMixin):
     """

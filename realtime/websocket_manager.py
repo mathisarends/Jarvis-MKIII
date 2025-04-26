@@ -1,8 +1,8 @@
+import asyncio
 import json
 import base64
 from typing import Optional, Dict, Any, Callable
 import websockets
-import asyncio
 
 from utils.logging_mixin import LoggingMixin
 
@@ -19,10 +19,6 @@ class WebSocketManager(LoggingMixin):
     def __init__(self, websocket_url: str, headers: Dict[str, str]):
         """
         Initialize the WebSocket Manager.
-
-        Args:
-            websocket_url: The URL for the WebSocket connection
-            headers: HTTP headers to use for the connection
         """
         self.websocket_url = websocket_url
         self.headers = headers
@@ -32,9 +28,6 @@ class WebSocketManager(LoggingMixin):
     async def create_connection(self) -> Optional[websockets.WebSocketClientProtocol]:
         """
         Create a WebSocket connection.
-
-        Returns:
-            The WebSocket connection or None on error
         """
         try:
             self.logger.info("Establishing connection to %s...", self.websocket_url)
@@ -55,12 +48,6 @@ class WebSocketManager(LoggingMixin):
     async def send_message(self, message: Dict[str, Any]) -> bool:
         """
         Send a JSON message through the WebSocket connection.
-
-        Args:
-            message: Dictionary to be sent as JSON
-
-        Returns:
-            True if message was sent successfully, False otherwise
         """
         if not self.connection:
             self.logger.error(self.NO_CONNECTION_ERROR_MSG)
@@ -81,9 +68,6 @@ class WebSocketManager(LoggingMixin):
         Args:
             data: Binary data to send
             encoding: Encoding method (default: base64)
-
-        Returns:
-            True if data was sent successfully, False otherwise
         """
         if not self.connection:
             self.logger.error(self.NO_CONNECTION_ERROR_MSG)
@@ -102,38 +86,6 @@ class WebSocketManager(LoggingMixin):
             return False
         except Exception as e:
             self.logger.error("Error sending binary data: %s", e)
-            return False
-
-    async def send_truncate_message(self, item_id: str, audio_end_ms: int) -> bool:
-        """
-        Send a message to truncate the audio stream.
-
-        Args:
-            item_id: ID of the message item to truncate
-            audio_end_ms: End time in milliseconds for the audio stream
-
-        Returns:
-            True if message was sent successfully, False otherwise
-        """
-        try:
-            message = {
-                "type": "conversation.item.truncate",
-                "item_id": item_id,
-                "content_index": 0,
-                "audio_end_ms": audio_end_ms,
-            }
-
-            self.logger.info(
-                "Truncate parameters - item_id: %s, audio_end_ms: %d",
-                item_id,
-                audio_end_ms,
-            )
-            self.logger.debug("Sending truncate message: %s", message)
-
-            return await self.send_message(message)
-
-        except Exception as e:
-            self.logger.error("Error sending truncate message: %s", e)
             return False
 
     async def receive_messages(
@@ -194,8 +146,5 @@ class WebSocketManager(LoggingMixin):
     def is_connected(self) -> bool:
         """
         Check if the WebSocket connection is established and open.
-
-        Returns:
-            True if connected, False otherwise
         """
         return self.connection is not None and not self.connection.closed

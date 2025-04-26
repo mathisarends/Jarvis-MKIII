@@ -1,7 +1,8 @@
 import json
 import asyncio
-from typing import Dict, Any, List, cast
+from typing import Dict, Any, List
 
+from audio.audio_player_base import AudioPlayer
 from audio.audio_player_factory import AudioPlayerFactory
 from audio.microphone import PyAudioMicrophone
 from realtime.config import (
@@ -14,9 +15,7 @@ from realtime.config import (
 )
 from realtime.realtime_tool_handler import RealtimeToolHandler
 from realtime.typings.done_message import DoneMessage
-from realtime.typings.typings import AudioDeltaResponse
 from realtime.websocket_manager import WebSocketManager
-from speech.converstation_duration_tracker import ConversationDurationTracker
 from tools.stop_conversation_tool import stop_conversation_tool
 from tools.pomodoro.pomodoro_tool import (
     pomodoro_tool,
@@ -36,7 +35,15 @@ class SessionManager(LoggingMixin):
     Manages OpenAI API session details and configuration.
     Separates session configuration from the main class.
     """
-    def __init__(self, ws_manager, system_message, voice, temperature, transcription_model):
+
+    def __init__(
+        self,
+        ws_manager: WebSocketManager,
+        system_message: str,
+        voice: str,
+        temperature: float,
+        transcription_model: str,
+    ):
         self.ws_manager = ws_manager
         self.system_message = system_message
         self.voice = voice
@@ -44,15 +51,9 @@ class SessionManager(LoggingMixin):
         self.transcription_model = transcription_model
         self.logger.info("SessionManager initialized")
 
-    def build_session_config(self, tools):
+    def build_session_config(self, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Creates the session configuration for the OpenAI API.
-        
-        Args:
-            tools: List of tool schemas for the API
-            
-        Returns:
-            A dictionary with the session configuration
         """
         return {
             "type": "session.update",
@@ -72,13 +73,13 @@ class SessionManager(LoggingMixin):
             },
         }
 
-    async def initialize_session(self, tools):
+    async def initialize_session(self, tools: List[Dict[str, Any]]) -> bool:
         """
         Initializes a session with the OpenAI API.
-        
+
         Args:
             tools: List of tool schemas for the API
-            
+
         Returns:
             True if initialization was successful, False otherwise
         """
@@ -104,21 +105,21 @@ class SessionManager(LoggingMixin):
             return False
 
 
-# === Audio Handler for audio processing ===
 class AudioHandler(LoggingMixin):
     """
     Manages audio processing, both for sending and receiving.
     Separates audio logic from the main class.
     """
-    def __init__(self, ws_manager, audio_player):
+
+    def __init__(self, ws_manager: WebSocketManager, audio_player: AudioPlayer):
         self.ws_manager = ws_manager
         self.audio_player = audio_player
         self.logger.info("AudioHandler initialized")
 
-    async def send_audio_stream(self, mic_stream):
+    async def send_audio_stream(self, mic_stream: PyAudioMicrophone) -> None:
         """
         Sends audio data from the microphone to the OpenAI API.
-        
+
         Args:
             mic_stream: A MicrophoneStream object that provides audio data
         """
@@ -151,91 +152,83 @@ class AudioHandler(LoggingMixin):
         except Exception as e:
             self.logger.error("Error while sending audio: %s", e)
 
-    def handle_audio_delta(self, response):
+    def handle_audio_delta(self, response: Dict[str, Any]) -> None:
         """
         Processes audio responses from the OpenAI API.
-        
+
         Args:
             response: The response containing audio data
         """
-        if response["type"] != "response.audio.delta":
-            return
-
-        base64_audio = cast(AudioDeltaResponse, response)["delta"]
+        base64_audio = response.get("delta", "")
         if not base64_audio or not isinstance(base64_audio, str):
             return
 
         self.audio_player.add_audio_chunk(base64_audio)
-        
-    def stop_playback(self):
+
+    def stop_playback(self) -> None:
         """
         Stops audio playback.
         """
         self.audio_player.clear_queue_and_stop()
 
 
-# === EventRouter for event handling ===
 class EventRouter(LoggingMixin):
     """
     Processes and routes events based on their type.
     Separates routing logic from the main class.
     """
-    def __init__(self, event_bus, audio_handler, tool_handler, ws_manager):
+
+    def __init__(
+        self,
+        event_bus: EventBus,
+        audio_handler: AudioHandler,
+        tool_handler: RealtimeToolHandler,
+        ws_manager: WebSocketManager,
+    ):
         self.event_bus = event_bus
         self.audio_handler = audio_handler
         self.tool_handler = tool_handler
         self.ws_manager = ws_manager
-        self._current_response_start_time_ms = 0
-        self._last_assistant_message_item_id = ""
-        self.session_duration_tracker = None
-        self.logger.info("EventRouter initialized")
-        
-    def set_duration_tracker(self, tracker):
-        """
-        Sets the Conversation Duration Tracker.
-        
-        Args:
-            tracker: A ConversationDurationTracker object
-        """
-        self.session_duration_tracker = tracker
+        self._current_response_start_time_ms: int = 0
+        self._last_assistant_message_item_id: str = ""
 
-    async def process_event(self, event_type, response):
+    async def process_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """
-        Processes an event based on its type.
-        
+        Processes an event based on its type using early returns.
+
         Args:
             event_type: The type of the event
             response: The complete response object
         """
-        # Response completed
+        # Using early returns for cleaner control flow
         if event_type == "response.done":
             await self._handle_response_done(response)
-            
-        # Speech input started
-        elif event_type == "input_audio_buffer.speech_started":
+            return
+
+        if event_type == "input_audio_buffer.speech_started":
             await self._handle_speech_started()
-            
-        # Speech input ended
-        elif event_type == "input_audio_buffer.speech_stopped":
+            return
+
+        if event_type == "input_audio_buffer.speech_stopped":
             self._handle_speech_stopped(response)
-            
-        # Transcription of speech input completed
-        elif event_type == "conversation.item.input_audio_transcription.completed":
+            return
+
+        if event_type == "conversation.item.input_audio_transcription.completed":
             self._handle_transcription_completed(response)
-            
-        # Audio delta received
-        elif event_type == "response.audio.delta":
+            return
+
+        if event_type == "response.audio.delta":
             self.audio_handler.handle_audio_delta(response)
-            
-        # Conversation item truncated
-        elif event_type == "conversation.item.truncated":
+            return
+
+        if event_type == "conversation.item.truncated":
             self.logger.info("Conversation item truncated event received")
-            
-        # Other events
-        elif event_type in ["error", "session.updated", "session.created"]:
+            return
+
+        if event_type in ["error", "session.updated", "session.created"]:
             self._handle_system_event(event_type, response)
 
-    async def _handle_response_done(self, response):
+    async def _handle_response_done(self, response: Dict[str, Any]) -> None:
         """Processes response.done events"""
         self.logger.info("Assistant response completed")
         done_message = DoneMessage.from_json(response)
@@ -251,26 +244,19 @@ class EventRouter(LoggingMixin):
                 response, self.ws_manager.connection
             )
 
-    async def _handle_speech_started(self):
+    async def _handle_speech_started(self) -> None:
         """Processes speech_started events"""
         self.logger.info("User speech input started")
 
         self.audio_handler.stop_playback()
         self.event_bus.publish(EventType.USER_SPEECH_STARTED)
 
-        if self._last_assistant_message_item_id and self.session_duration_tracker:
-            await self.ws_manager.send_truncate_message(
-                item_id=self._last_assistant_message_item_id,
-                audio_end_ms=self.session_duration_tracker.duration_ms
-                - self._current_response_start_time_ms,
-            )
-
-    def _handle_speech_stopped(self, response):
+    def _handle_speech_stopped(self, response: Dict[str, Any]) -> None:
         """Processes speech_stopped events"""
         self._current_response_start_time_ms = response.get("audio_end_ms", 0)
         self.event_bus.publish(event_type=EventType.USER_SPEECH_ENDED)
 
-    def _handle_transcription_completed(self, response):
+    def _handle_transcription_completed(self, response: Dict[str, Any]) -> None:
         """Processes transcription_completed events"""
         user_input_transcript = response.get("transcript", "")
         self.event_bus.publish(
@@ -278,26 +264,26 @@ class EventRouter(LoggingMixin):
             data=user_input_transcript,
         )
 
-    def _handle_system_event(self, event_type, response):
+    def _handle_system_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """Processes system events"""
         self.logger.info("Event received: %s", event_type)
         if event_type == "error":
             self.logger.error("API error: %s", response)
 
 
-# === MessageParser for message processing ===
 class MessageParser(LoggingMixin):
     """
     Parses and processes incoming websocket messages.
     """
-    def __init__(self, event_router):
+
+    def __init__(self, event_router: EventRouter):
         self.event_router = event_router
         self.logger.info("MessageParser initialized")
-        
-    async def parse_message(self, message):
+
+    async def parse_message(self, message: str) -> None:
         """
         Parses an incoming message from the WebSocket.
-        
+
         Args:
             message: The raw message from the WebSocket
         """
@@ -325,7 +311,6 @@ class MessageParser(LoggingMixin):
             self.logger.error("Unexpected error processing message: %s", e)
 
 
-# === Main class (Facade) ===
 class OpenAIRealtimeAPI(LoggingMixin):
     """
     Main class for managing OpenAI Realtime API communication.
@@ -343,31 +328,27 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.temperature = TEMPERATURE
         self.transcription_model = TRANSCRIPTION_MODEL
 
-        # Create WebSocketManager
+        # Create components
         self.ws_manager = WebSocketManager(OPENAI_WEBSOCKET_URL, OPENAI_HEADERS)
-
-        # Initialize Tool Registry
         self.tool_registry = ToolRegistry.get_instance()
         self._init_tool_registry()
-
-        # Create Event Bus and Audio Player
         self.event_bus = EventBus()
         self.audio_player = AudioPlayerFactory.get_shared_instance()
 
-        # Create components with improved responsibilities
+        # Create specialized handlers
         self.tool_handler = RealtimeToolHandler(self.tool_registry)
         self.audio_handler = AudioHandler(self.ws_manager, self.audio_player)
-        self.event_router = EventRouter(self.event_bus, self.audio_handler, self.tool_handler, self.ws_manager)
+        self.event_router = EventRouter(
+            self.event_bus, self.audio_handler, self.tool_handler, self.ws_manager
+        )
         self.session_manager = SessionManager(
-            self.ws_manager, self.system_message, self.voice, self.temperature, self.transcription_model
+            self.ws_manager,
+            self.system_message,
+            self.voice,
+            self.temperature,
+            self.transcription_model,
         )
         self.message_parser = MessageParser(self.event_router)
-
-        # Session tracking
-        self.session_duration_tracker = ConversationDurationTracker()
-        self.event_router.set_duration_tracker(self.session_duration_tracker)
-
-        self.logger.info("OpenAI Realtime API class initialized")
 
     def _init_tool_registry(self) -> None:
         """
@@ -418,8 +399,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         if not await self.session_manager.initialize_session(self._get_openai_tools()):
             await self.ws_manager.close()
             return False
-
-        self.session_duration_tracker.start_conversation()
 
         try:
             await asyncio.gather(
