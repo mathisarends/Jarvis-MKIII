@@ -92,7 +92,7 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
 
         self.event_bus.subscribe(
             event_type=EventType.ASSISTANT_RESPONSE_COMPLETED,
-            callback=self._handle_user_input_transcription_completed,
+            callback=self._handle_assistant_response_completed,
         )
 
         self.event_bus.subscribe(

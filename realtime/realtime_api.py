@@ -19,11 +19,8 @@ from realtime.websocket_manager import WebSocketManager
 from speech.converstation_duration_tracker import ConversationDurationTracker
 from tools.stop_conversation_tool import stop_conversation_tool
 from tools.pomodoro.pomodoro_tool import (
-    get_pomodoro_status,
-    start_pomodoro_timer,
-    stop_pomodoro_timer,
+    pomodoro_tool,
 )
-from tools.volume_tool import get_volume_tool, set_volume_tool
 from tools.weather.weather_tool import get_weather
 from tools.web_search_tool import web_search_tool
 from tools.clipboard_tool import clipboard_tool
@@ -77,15 +74,14 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Initialize the tool registry and register all available tools.
         """
         try:
+            # TODO: test this logic here.
             self.tool_registry.register_tool(stop_conversation_tool)
             self.tool_registry.register_tool(get_weather)
-            """ self.tool_registry.register_tool(web_search_tool)
-            self.tool_registry.register_tool(set_volume_tool)
-            self.tool_registry.register_tool(get_volume_tool)
-            self.tool_registry.register_tool(start_pomodoro_timer)
-            self.tool_registry.register_tool(stop_pomodoro_timer)
-            self.tool_registry.register_tool(get_pomodoro_status)
-            self.tool_registry.register_tool(clipboard_tool) """
+            self.tool_registry.register_tool(web_search_tool)
+            self.tool_registry.register_tool(pomodoro_tool)
+            self.tool_registry.register_tool(clipboard_tool)
+            """ self.tool_registry.register_tool(set_volume_tool)
+            self.tool_registry.register_tool(get_volume_tool) """
 
             self.logger.info("All tools successfully registered")
         except Exception as e:

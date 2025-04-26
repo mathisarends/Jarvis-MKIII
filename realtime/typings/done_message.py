@@ -7,19 +7,12 @@ from utils.logging_mixin import LoggingMixin
 class DoneMessage(LoggingMixin):
     """
     A class representing a 'response.done' message from the OpenAI API with lazy evaluation.
-
-    This class uses lazy evaluation to extract information from the response only when needed.
-    It focuses on message item ID, text content, and tool call detection as core functionality.
-
-    Supports both text-type and audio-type messages with transcripts.
     """
 
     def __init__(self, response_data: Dict[str, Any]):
         """
         Initialize a DoneMessage from raw API response data.
-
-        Args:
-            response_data: The complete API response dictionary of type 'response.done'
+        If the event type matches we can assume the json structure - for now atleast :)
         """
         self.raw_response = response_data
 
@@ -27,12 +20,6 @@ class DoneMessage(LoggingMixin):
     def from_json(cls, json_data: Dict[str, Any]) -> "DoneMessage":
         """
         Create a DoneMessage instance from JSON data.
-
-        Args:
-            json_data: The JSON data representing a response.done message
-
-        Returns:
-            A new DoneMessage instance
         """
         return cls(json_data)
 
@@ -41,9 +28,6 @@ class DoneMessage(LoggingMixin):
         """
         Extract the message item ID from the raw response.
         Lazy evaluated and cached on first access.
-
-        Returns:
-            The message item ID or an empty string if not found
         """
         try:
             output_items = self.raw_response.get("response", {}).get("output", [])
@@ -68,9 +52,6 @@ class DoneMessage(LoggingMixin):
         Extract the text content from the message.
         Supports both text-type content and audio-type content with transcripts.
         Lazy evaluated and cached on first access.
-
-        Returns:
-            The concatenated text content or an empty string if not found
         """
         try:
             output_items = self.raw_response.get("response", {}).get("output", [])
@@ -168,54 +149,3 @@ class DoneMessage(LoggingMixin):
         except Exception as e:
             self.logger.error("Error checking for tool calls: %s", e)
             return False
-
-    @cached_property
-    def response_id(self) -> str:
-        """
-        Extract the response ID from the raw response.
-        Lazy evaluated and cached on first access.
-
-        Returns:
-            The response ID or an empty string if not found
-        """
-        try:
-            return self.raw_response.get("response", {}).get("id", "")
-        except Exception as e:
-            self.logger.error("Error extracting response ID: %s", e)
-            return ""
-
-    def get_tool_calls(self) -> List[Dict[str, Any]]:
-        """
-        Extract all tool calls from the response.
-        This method is not cached as it returns a new list each time.
-
-        Returns:
-            List of tool call dictionaries or empty list if none found
-        """
-        try:
-            output_items = self.raw_response.get("response", {}).get("output", [])
-            tool_calls = []
-
-            if not isinstance(output_items, list) or not output_items:
-                return []
-
-            for item in output_items:
-                if item.get("type") == "function_call":
-                    tool_calls.append(item)
-
-            return tool_calls
-        except Exception as e:
-            self.logger.error("Error extracting tool calls: %s", e)
-            return []
-
-    def is_valid(self) -> bool:
-        """
-        Check if this is a valid and complete response.done message.
-
-        Returns:
-            True if the response is valid and complete, False otherwise
-        """
-        return (
-            self.raw_response.get("type") == "response.done"
-            and self.raw_response.get("response", {}).get("status") == "completed"
-        )
