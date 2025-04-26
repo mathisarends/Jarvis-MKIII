@@ -11,7 +11,6 @@ from typing import Dict, List, Callable, Any
 from utils.singleton_meta_class import SingletonMetaClass
 
 
-
 class EventType(Enum):
     """Enumeration for all possible event types."""
 
@@ -27,7 +26,6 @@ class EventType(Enum):
 
     WAKE_WORD_DETECTED = auto()
     IDLE_TRANSITION = auto()
-
 
 
 class EventBus(metaclass=SingletonMetaClass):

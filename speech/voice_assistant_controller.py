@@ -94,8 +94,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
             event_type=EventType.ASSISTANT_RESPONSE_COMPLETED,
             callback=self._handle_user_input_transcription_completed,
         )
-        
-        self.event_bus.subscribe(event_type=EventType.USER_INPUT_TRANSCRIPTION_COMPLETED, callback=self._handle_user_input_transcription_completed)
+
+        self.event_bus.subscribe(
+            event_type=EventType.USER_INPUT_TRANSCRIPTION_COMPLETED,
+            callback=self._handle_user_input_transcription_completed,
+        )
 
     async def initialize(self):
         """Initialize all voice assistant components"""
@@ -271,7 +274,7 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
         self.logger.info("Assistant stopped responding")
         self._assistant_is_speaking = False
         self._update_activity_time()
-        
+
     # Useful for stop tool
     def stop_conversation_loop(self):
         self._conversation_active = False

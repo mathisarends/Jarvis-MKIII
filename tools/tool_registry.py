@@ -20,12 +20,6 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
     def register_tool(self, tool: BaseTool) -> None:
         """
         Registers a single tool in the registry.
-
-        Args:
-            tool: A LangChain tool
-
-        Raises:
-            ValueError: If a tool with the same name is already registered
         """
         if tool.name in self._tools:
             raise ValueError(
@@ -35,36 +29,9 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
         self._tools[tool.name] = tool
         self.logger.info("Tool '%s' successfully registered.", tool.name)
 
-    def register_tools(self, tools: List[BaseTool]) -> None:
-        """
-        Registers multiple tools at once.
-
-        Args:
-            tools: A list of LangChain tools
-
-        Raises:
-            ValueError: If any tool name already exists in the registry
-        """
-        duplicate_names = set(tool.name for tool in tools) & set(self._tools.keys())
-        if duplicate_names:
-            raise ValueError(
-                f"The following tool names are already registered: {', '.join(duplicate_names)}"
-            )
-
-        for tool in tools:
-            self._tools[tool.name] = tool
-
-        self.logger.info("%d tools successfully registered.", len(tools))
-
     def unregister_tool(self, tool_name: str) -> bool:
         """
         Removes a tool from the registry.
-
-        Args:
-            tool_name: The name of the tool to remove
-
-        Returns:
-            bool: True if the tool was removed, False if it didn't exist
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
@@ -80,12 +47,6 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
     def get_tool(self, tool_name: str) -> Optional[BaseTool]:
         """
         Retrieves a registered tool by name.
-
-        Args:
-            tool_name: Name of the tool to retrieve
-
-        Returns:
-            Optional[BaseTool]: The tool if found, otherwise None
         """
         return self._tools.get(tool_name)
 
@@ -93,8 +54,6 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
         """
         Lists all registered tool names.
 
-        Returns:
-            List[str]: A list of registered tool names
         """
         return list(self._tools.keys())
 
@@ -116,18 +75,6 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
         """
         tools_to_convert = self.get_all_tools()
         return self._converter.convert_tools(tools_to_convert)
-
-    def has_tool(self, tool_name: str) -> bool:
-        """
-        Checks if a tool with the given name is registered.
-
-        Args:
-            tool_name: Name of the tool to check
-
-        Returns:
-            bool: True if registered, False otherwise
-        """
-        return tool_name in self._tools
 
 
 class LangChainToOpenAIConverter(LoggingMixin):
@@ -183,8 +130,9 @@ class LangChainToOpenAIConverter(LoggingMixin):
             if schema_params:
                 return schema_params
 
-        if hasattr(lc_tool, "_run") and callable(lc_tool._run):
-            sig_params = self._extract_from_signature(lc_tool)
+        # Verwendung von öffentlicher Methode statt geschützter _run-Methode
+        if hasattr(lc_tool, "run") and callable(getattr(lc_tool, "run")):
+            sig_params = self._extract_from_signature(lc_tool, method_name="run")
             if sig_params:
                 return sig_params
 
@@ -224,12 +172,15 @@ class LangChainToOpenAIConverter(LoggingMixin):
             self.logger.debug("Failed to extract schema from tool '%s'", lc_tool.name)
             return None
 
-    def _extract_from_signature(self, lc_tool: BaseTool) -> Optional[Dict[str, Any]]:
+    def _extract_from_signature(
+        self, lc_tool: BaseTool, method_name: str = "run"
+    ) -> Optional[Dict[str, Any]]:
         """
         Extract parameters from a tool's function signature.
 
         Args:
             lc_tool: A LangChain tool
+            method_name: Name of the method to extract signature from (default: "run")
 
         Returns:
             Optional[Dict]: Parameters dictionary or None if extraction failed
@@ -237,7 +188,9 @@ class LangChainToOpenAIConverter(LoggingMixin):
         parameters = {"type": "object", "properties": {}, "required": []}
 
         try:
-            sig = inspect.signature(lc_tool._run)
+            # Verwende getattr um auf die Methode zuzugreifen
+            method = getattr(lc_tool, method_name)
+            sig = inspect.signature(method)
 
             for param_name, param in sig.parameters.items():
                 if param_name == "self":
@@ -256,7 +209,9 @@ class LangChainToOpenAIConverter(LoggingMixin):
             return parameters
         except (AttributeError, TypeError):
             self.logger.debug(
-                "Failed to extract function signature from tool '%s'", lc_tool.name
+                "Failed to extract function signature from tool '%s' method '%s'",
+                lc_tool.name,
+                method_name,
             )
             return None
 
@@ -285,16 +240,31 @@ class LangChainToOpenAIConverter(LoggingMixin):
 
         annotation_str = str(annotation)
         if "typing.Optional" in annotation_str:
-            inner_type = annotation_str.split("[")[1].split("]")[0]
-            if "str" in inner_type:
-                return "string"
-            if "int" in inner_type or "float" in inner_type:
-                return "number"
-            if "bool" in inner_type:
-                return "boolean"
-            if "dict" in inner_type:
-                return "object"
-            if "list" in inner_type:
-                return "array"
+            return self._get_optional_type(annotation_str)
+
+        return "string"
+
+    def _get_optional_type(self, annotation_str: str) -> str:
+        """
+        Extract the type from an Optional type annotation.
+
+        Args:
+            annotation_str: String representation of the Optional type annotation
+
+        Returns:
+            str: Corresponding OpenAI parameter type for the inner type
+        """
+        inner_type = annotation_str.split("[")[1].split("]")[0]
+
+        if "str" in inner_type:
+            return "string"
+        if "int" in inner_type or "float" in inner_type:
+            return "number"
+        if "bool" in inner_type:
+            return "boolean"
+        if "dict" in inner_type:
+            return "object"
+        if "list" in inner_type:
+            return "array"
 
         return "string"

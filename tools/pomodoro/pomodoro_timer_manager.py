@@ -8,6 +8,7 @@ from audio.audio_player_factory import AudioPlayerFactory
 from utils.logging_mixin import LoggingMixin
 from utils.singleton_meta_class import SingletonMetaClass
 
+
 class PomodoroTimerManager(LoggingMixin, metaclass=SingletonMetaClass):
     def __init__(self):
         self.duration_seconds = 0
