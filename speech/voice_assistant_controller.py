@@ -1,10 +1,10 @@
 import asyncio
-import websockets
 import time
 
 from audio.microphone import PyAudioMicrophone
 from audio.audio_player_factory import AudioPlayerFactory
 from realtime.realtime_api import OpenAIRealtimeAPI
+from speech.transcript_manager import TranscriptManager
 from speech.wake_word_listener import WakeWordListener
 
 from utils.event_bus import EventBus, EventType
@@ -26,28 +26,6 @@ class AssistantConfig:
         self.sensitivity = sensitivity
         self.idle_timeout = idle_timeout
         self.language = language
-
-
-class TranscriptManager:
-    """Manages conversation transcripts"""
-
-    def __init__(self):
-        self._current = ""
-        self.full = ""
-
-    @property
-    def current(self):
-        """Get the current transcript"""
-        return self._current
-
-    @current.setter
-    def current(self, value):
-        """Set the current transcript"""
-        self._current = value
-
-    def reset_current(self):
-        """Reset the current transcript"""
-        self._current = ""
 
 
 @singleton
@@ -114,9 +92,11 @@ class VoiceAssistantController(LoggingMixin):
         )
 
         self.event_bus.subscribe(
-            EventType.ASSISTANT_RESPONSE_COMPLETED,
-            self._handle_assistant_response_completed,
+            event_type=EventType.ASSISTANT_RESPONSE_COMPLETED,
+            callback=self._handle_user_input_transcription_completed,
         )
+        
+        self.event_bus.subscribe(event_type=EventType.USER_INPUT_TRANSCRIPTION_COMPLETED, callback=self._handle_user_input_transcription_completed)
 
     async def initialize(self):
         """Initialize all voice assistant components"""
@@ -255,7 +235,6 @@ class VoiceAssistantController(LoggingMixin):
         self._user_is_speaking = True
         self._update_activity_time()
 
-        # Cancel audio playback when user starts speaking
         self.audio_player.clear_queue_and_stop()
 
     def _handle_user_speech_ended(self):
@@ -264,10 +243,20 @@ class VoiceAssistantController(LoggingMixin):
         self._user_is_speaking = False
         self._update_activity_time()
 
+    def _handle_user_input_transcription_completed(self, transcript_text):
+        """Handler for completed user input transcription"""
+        if transcript_text:
+            self.transcript.current_user = transcript_text
+            self.transcript.add_to_history("USER", transcript_text)
+
+        self.logger.info("User input transcription completed: '%s'", transcript_text)
+        self._update_activity_time()
+
     def _handle_assistant_response_completed(self, transcript_text):
         """Handler for completed assistant response"""
         if transcript_text:
-            self.transcript.current = transcript_text
+            self.transcript.current_assistant = transcript_text
+            self.transcript.add_to_history("ASSISTANT", transcript_text)
 
         self.logger.info("Assistant response completed: '%s'", transcript_text)
         self._update_activity_time()

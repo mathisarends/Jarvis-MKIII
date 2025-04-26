@@ -9,6 +9,7 @@ from realtime.config import (
     OPENAI_HEADERS,
     SYSTEM_MESSAGE,
     TEMPERATURE,
+    TRANSCRIPTION_MODEL,
     VOICE,
 )
 from realtime.realtime_tool_handler import RealtimeToolHandler
@@ -52,6 +53,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.system_message = SYSTEM_MESSAGE
         self.voice = VOICE
         self.temperature = TEMPERATURE
+        self.transcription_model = TRANSCRIPTION_MODEL
 
         self.ws_manager = WebSocketManager(OPENAI_WEBSOCKET_URL, OPENAI_HEADERS)
 
@@ -162,6 +164,10 @@ class OpenAIRealtimeAPI(LoggingMixin):
                 "modalities": ["text", "audio"],
                 "temperature": self.temperature,
                 "tools": self._get_openai_tools(),
+                "input_audio_transcription": {
+                    "model": "gpt-4o-transcribe",
+                    "prompt": "Die Spracheingabe erfolgt hauptsächlich auf Deutsch, enthält jedoch häufig englische Fachbegriffe aus dem Bereich der Programmierung. Bitte transkribiere entsprechend.",
+                },
             },
         }
 
@@ -260,7 +266,7 @@ class OpenAIRealtimeAPI(LoggingMixin):
         except Exception as e:
             self.logger.error("Unexpected error processing message: %s", e)
 
-    async def _route_event(self, event_type: str, response: OpenAIRealtimeResponse):
+    async def _route_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """
         Route the event to the appropriate handler based on event type.
         Uses EventBus to publish events to subscribers.
@@ -297,12 +303,19 @@ class OpenAIRealtimeAPI(LoggingMixin):
                     audio_end_ms=self.session_duration_tracker.duration_ms
                     - self._current_response_start_time_ms,
                 )
-
             return
 
         if event_type == "input_audio_buffer.speech_stopped":
             self._current_response_start_time_ms = response.get("audio_end_ms", 0)
             self.event_bus.publish(event_type=EventType.USER_SPEECH_ENDED)
+            return
+
+        if event_type == "conversation.item.input_audio_transcription.completed":
+            user_input_transcript = response.get("transcript", "")
+            self.event_bus.publish(
+                event_type=EventType.USER_INPUT_TRANSCRIPTION_COMPLETED,
+                data=user_input_transcript,
+            )
             return
 
         if event_type == "response.audio.delta":

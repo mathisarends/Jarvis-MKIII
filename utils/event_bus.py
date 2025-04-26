@@ -16,8 +16,10 @@ class EventType(Enum):
 
     USER_SPEECH_STARTED = auto()
     USER_SPEECH_ENDED = auto()
+
+    # Used for extraction of full transcript, when the asistant stopped responding
     ASSISTANT_RESPONSE_COMPLETED = auto()
-    TRANSCRIPT_UPDATED = auto()
+    USER_INPUT_TRANSCRIPTION_COMPLETED = auto()
 
     ASSISTANT_STARTED_RESPONDING = auto()
     ASSISTANT_COMPLETED_RESPONDING = auto()
