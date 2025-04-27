@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from notionary import BlockElementRegistryBuilder, NotionPageFactory
 
-
 class ClipboardPage:
     def __init__(self):
         """
@@ -15,6 +14,7 @@ class ClipboardPage:
         self.page.block_registry = (
             BlockElementRegistryBuilder()
             .with_headings()
+            .with_callouts()
             .with_paragraphs()
             .with_numbered_list()
             .with_bulleted_list()

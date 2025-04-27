@@ -23,7 +23,7 @@ from plugins.pomodoro.pomodoro_tool import (
 from plugins.weather.weather_tool import get_weather
 from plugins.web_search_tool import web_search_tool
 from plugins.volume_tool import set_volume_tool, get_volume_tool
-from plugins.notion.clipboard_tool import clipboard_tool
+from plugins.notion.clipboard.clipboard_tool import clipboard_tool
 
 from plugins.tool_registry import ToolRegistry
 
@@ -72,16 +72,16 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.transcription_model,
         )
 
-    # TODO: Registry hier optinal mit dem Pomodoro-Timer verknüpfen
+    # TODO: Registry hier optinal mit dem Pomodoro-Timer verknü
     def _init_tool_registry(self) -> None:
         """
         Initializes the tool registry and registers all available tools.
         """
         try:
-            """self.tool_registry.register_tool(stop_conversation_tool)
+            """ self.tool_registry.register_tool(stop_conversation_tool)
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
-            self.tool_registry.register_tool(pomodoro_tool)"""
+            self.tool_registry.register_tool(pomodoro_tool) """
             self.tool_registry.register_tool(clipboard_tool)
             """ self.tool_registry.register_tool(set_volume_tool)
             self.tool_registry.register_tool(get_volume_tool) """
