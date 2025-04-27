@@ -29,7 +29,7 @@ SYSTEM_MESSAGE = (
     "- 'Timer gestoppt.' "
     "Bei allen anderen Themen behältst du deinen charmanten, humorvollen Stil bei."
 )
-VOICE = "echo"
+VOICE = "alloy"
 
 CHUNK = 1024
 FORMAT = pyaudio.paInt16

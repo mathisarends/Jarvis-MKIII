@@ -32,7 +32,6 @@ async def clipboard_tool(prompt: str) -> str:
 
     try:
         result = await workflow.ainvoke(initial_state)
-        print("Workflow result:", result)
 
         if result["status"] == "ERROR":
             return result["error"]

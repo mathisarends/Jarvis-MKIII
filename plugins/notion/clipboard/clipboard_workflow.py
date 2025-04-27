@@ -152,7 +152,6 @@ Please create a well-structured note that captures the key information. Remember
         )
 
         formatted_content = response.content.strip()
-        print("appending note to clipboard:", formatted_content)
 
         await session.add_note(formatted_content)
 

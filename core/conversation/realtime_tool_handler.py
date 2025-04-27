@@ -37,7 +37,6 @@ class FunctionCallItem(TypedDict):
     call_id: str
     arguments: str
 
-# TODO: Refactor this bitch here ala Notion:
 class RealtimeToolHandler(LoggingMixin):
     """
     Handles function calls in OpenAI Realtime API responses, executes tools,
@@ -117,16 +116,8 @@ class RealtimeToolHandler(LoggingMixin):
             await self.send_function_result(call_id, result, connection)
             await self.create_new_response(connection)
 
-            # Emit completion event for regular tool
             self.event_bus.publish(
-                EventType.ASSISTANT_COMPLETED_TOOL_CALL,
-                {
-                    "tool_name": function_name,
-                    "call_id": call_id,
-                    "success": (
-                        "error" not in result if isinstance(result, dict) else True
-                    ),
-                },
+                EventType.ASSISTANT_COMPLETED_TOOL_CALL
             )
             return
 
@@ -140,12 +131,9 @@ class RealtimeToolHandler(LoggingMixin):
         # Sende eine allgemeine Nachricht, dass der Tool-Call gestartet wurde,
         # anstatt einen function result
         await self.send_tool_started_message(
-            call_id,
-            function_name,
             return_early_message,
             connection,
         )
-        await self.create_new_response(connection)
 
         self._execute_tool_in_background(
             tool, arguments, function_name, call_id, connection
@@ -153,29 +141,18 @@ class RealtimeToolHandler(LoggingMixin):
 
     async def send_tool_started_message(
         self,
-        call_id: str,
-        tool_name: str,
         message: str,
         connection: WebSocketClientProtocol,
     ) -> None:
         """
         Send a message informing that a tool has started execution.
         """
-        self.logger.info(
-            "Sending tool started message for %s with call_id %s: %s",
-            tool_name,
-            call_id,
-            message,
-        )
-
         start_message = {
-            "type": "conversation.item.create",
-            "item": {
-                "id": f"tool_start_{call_id}",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": message}],
-            },
+            "type": "response.create",
+            "response": {
+                "modalities": ["text", "audio"],
+                "instructions": f"Informiere den Nutzer, dass das Tool ausgeführt wird mit einer Nachricht wie: '{message}'"
+            }
         }
 
         await connection.send(json.dumps(start_message))
