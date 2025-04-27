@@ -3,11 +3,10 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from lights.light_controller import LightController
-from resources.audio.audio_player_factory import AudioPlayerFactory
-from resources.audio.py_audio_player import PyAudioPlayer
-from utils.logging_mixin import setup_logging
-from speech.voice_assistant_controller import VoiceAssistantController
+from core.audio.audio_player_factory import AudioPlayerFactory
+from core.audio.py_audio_player import PyAudioPlayer
+from core.speech.voice_assistant_controller import VoiceAssistantController
+from shared.logging_mixin import setup_logging
 
 
 async def main():
