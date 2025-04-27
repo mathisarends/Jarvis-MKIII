@@ -1,10 +1,13 @@
 import asyncio
 import json
 import base64
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
 import websockets
 
 from utils.logging_mixin import LoggingMixin
+
+if TYPE_CHECKING:
+    from realtime.realtime_api import EventRouter
 
 
 class WebSocketManager(LoggingMixin):
@@ -16,13 +19,19 @@ class WebSocketManager(LoggingMixin):
 
     NO_CONNECTION_ERROR_MSG = "No connection available. Call create_connection() first."
 
-    def __init__(self, websocket_url: str, headers: Dict[str, str]):
+    def __init__(self, websocket_url: str, headers: Dict[str, str], event_router=None):
         """
         Initialize the WebSocket Manager.
+        
+        Args:
+            websocket_url: URL for the WebSocket connection
+            headers: HTTP headers for the connection
+            event_router: Optional EventRouter for processing events
         """
         self.websocket_url = websocket_url
         self.headers = headers
         self.connection: Optional[websockets.WebSocketClientProtocol] = None
+        self.event_router = event_router
         self.logger.info("WebSocketManager initialized")
 
     async def create_connection(self) -> Optional[websockets.WebSocketClientProtocol]:
@@ -90,14 +99,14 @@ class WebSocketManager(LoggingMixin):
 
     async def receive_messages(
         self,
-        message_handler: Callable[[str], Any],
+        message_handler: Optional[Callable[[str], Any]] = None,
         should_continue: Callable[[], bool] = lambda: True,
     ) -> None:
         """
         Continuously receive and process messages from the WebSocket connection.
 
         Args:
-            message_handler: Function to process received messages
+            message_handler: Optional function to process received messages
             should_continue: Function that returns whether to continue receiving messages
         """
         if not self.connection:
@@ -107,7 +116,13 @@ class WebSocketManager(LoggingMixin):
         try:
             self.logger.info("Starting message reception...")
             async for message in self.connection:
-                await message_handler(message)
+                if message_handler:
+                    await message_handler(message)
+                elif self.event_router:
+                    await self._process_websocket_message(message)
+                else:
+                    self.logger.warning("No message handler or event router available")
+                
                 if not should_continue():
                     break
 
@@ -148,3 +163,33 @@ class WebSocketManager(LoggingMixin):
         Check if the WebSocket connection is established and open.
         """
         return self.connection is not None and not self.connection.closed
+    
+    async def _process_websocket_message(self, message: str) -> None:
+        """
+        Process incoming WebSocket messages and route events.
+        
+        Args:
+            message: The raw message from the WebSocket
+        """
+        try:
+            self.logger.debug("Raw message received: %s...", message[:100])
+            
+            response = json.loads(message)
+            
+            if not isinstance(response, dict):
+                self.logger.warning("Response is not a dictionary: %s", type(response))
+                return
+                
+            event_type = response.get("type", "")
+            await self.event_router.process_event(event_type, response)
+            
+        except json.JSONDecodeError as e:
+            self.logger.warning("Received malformed JSON message: %s", e)
+        except KeyError as e:
+            self.logger.warning(
+                "Expected key missing in message: %s | Message content: %s",
+                e,
+                message[:500],
+            )
+        except Exception as e:
+            self.logger.error("Unexpected error processing message: %s", e)

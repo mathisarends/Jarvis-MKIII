@@ -1,9 +1,9 @@
 import asyncio
 import time
 
-from audio.microphone import PyAudioMicrophone
-from audio.audio_player_factory import AudioPlayerFactory
 from realtime.realtime_api import OpenAIRealtimeAPI
+from resources.audio.microphone import PyAudioMicrophone
+from resources.audio.audio_player_factory import AudioPlayerFactory
 from speech.transcript_manager import TranscriptManager
 from speech.wake_word_listener import WakeWordListener
 

@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from audio.audio_player_factory import AudioPlayerFactory
+from resources.audio.audio_player_factory import AudioPlayerFactory
 from utils.logging_mixin import LoggingMixin
 from utils.singleton_meta_class import SingletonMetaClass
 

@@ -1,6 +1,6 @@
 from typing import Type, TypeVar, Optional, ClassVar, cast
 
-from audio.audio_player_base import AudioPlayer
+from resources.audio.audio_player_base import AudioPlayer
 
 T = TypeVar("T", bound="AudioPlayer")
 

@@ -10,8 +10,8 @@ import numpy as np
 import pyaudio
 import pygame
 
-from audio.audio_player_base import AudioPlayer
 from realtime.config import FORMAT, CHANNELS, CHUNK, RATE
+from resources.audio.audio_player_base import AudioPlayer
 from utils.event_bus import EventBus, EventType
 from utils.logging_mixin import LoggingMixin
 

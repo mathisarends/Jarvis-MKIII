@@ -3,9 +3,9 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from audio.py_audio_player import PyAudioPlayer
-from audio.audio_player_factory import AudioPlayerFactory
 from lights.light_controller import LightController
+from resources.audio.audio_player_factory import AudioPlayerFactory
+from resources.audio.py_audio_player import PyAudioPlayer
 from utils.logging_mixin import setup_logging
 from speech.voice_assistant_controller import VoiceAssistantController
 

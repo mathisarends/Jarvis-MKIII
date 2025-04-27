@@ -7,7 +7,7 @@ from utils.logging_mixin import LoggingMixin
 class AudioPlayer(ABC, LoggingMixin):
     """Abstract base class for audio players"""
 
-    sounds_dir = "sounds"
+    sounds_dir = "resources/sounds"
 
     @abstractmethod
     def start(self):
