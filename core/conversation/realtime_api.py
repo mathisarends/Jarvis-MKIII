@@ -82,7 +82,10 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
             self.tool_registry.register_tool(pomodoro_tool)"""
-            self.tool_registry.register_tool(clipboard_tool)
+            self.tool_registry.register_tool(
+                tool=clipboard_tool,
+                return_early_message="Clipboard content wird erstellt. Ich melde mich wenn ich fertig bin.",
+            )
             """ self.tool_registry.register_tool(set_volume_tool)
             self.tool_registry.register_tool(get_volume_tool) """
 

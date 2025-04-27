@@ -106,6 +106,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
             callback=self._handle_assistant_started_tool_call,
         )
 
+        self.event_bus.subscribe(
+            event_type=EventType.ASSISTANT_COMPLETED_TOOL_CALL,
+            callback=self._handle_assistant_completed_tool_call,
+        )
+
     async def initialize(self):
         """Initialize all voice assistant components"""
         self.logger.info("Initializing voice assistant components...")
@@ -171,7 +176,7 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
         api_task = asyncio.create_task(self._process_speech_with_api())
 
         try:
-            done, pending = await asyncio.wait(
+            _, pending = await asyncio.wait(
                 [api_task, timeout_task], return_when=asyncio.FIRST_COMPLETED
             )
 
@@ -272,8 +277,6 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
 
         self.logger.info("Assistant response completed: '%s'", transcript_text)
         self._update_activity_time()
-        # Important activity time has to be updated first otherwise the assistant could be cancelled due to idle timeout
-        self._assistant_is_making_tool_call = False
 
     def _handle_audio_playback_started(self):
         """Handler for start of audio playback"""
@@ -290,6 +293,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
     def _handle_assistant_started_tool_call(self):
         """Handler for when the assistant starts a tool call"""
         self._assistant_is_making_tool_call = True
+        self._update_activity_time()
+
+    def _handle_assistant_completed_tool_call(self):
+        """Handler for when the assistant completes a tool call"""
+        self._assistant_is_making_tool_call = False
         self._update_activity_time()
 
     # Useful for stop tool

@@ -15,21 +15,41 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
     def __init__(self):
         """Initializes an empty tool registry."""
         self._tools: Dict[str, BaseTool] = {}
+        self._early_messages: Dict[str, str] = {}  # Separate storage for early messages
         self._converter = LangChainToOpenAIConverter()
 
-    # TODO: Entweder kann man diese long_running Logik hier über einen Dekorator lösen oder man macht
-    # das etwas unsauberer hier über die registry
-    def register_tool(self, tool: BaseTool, long_running = False) -> None:
+    def register_tool(self, tool: BaseTool, return_early_message: str = "") -> None:
         """
         Registers a single tool in the registry.
+
+        Args:
+            tool: The LangChain tool to register
+            return_early_message: If provided, the tool will run in background and this message
+                                  will be returned immediately to the client
         """
         if tool.name in self._tools:
             raise ValueError(
                 f"A tool with the name '{tool.name}' is already registered."
             )
 
+        # Store early message in separate dictionary
+        if return_early_message:
+            self._early_messages[tool.name] = return_early_message
+
         self._tools[tool.name] = tool
         self.logger.info("Tool '%s' successfully registered.", tool.name)
+
+    def get_early_message(self, tool_name: str) -> Optional[str]:
+        """
+        Retrieves the early message for a tool if it exists.
+
+        Args:
+            tool_name: Name of the tool to get the early message for
+
+        Returns:
+            The early message or None if not set
+        """
+        return self._early_messages.get(tool_name)
 
     def unregister_tool(self, tool_name: str) -> bool:
         """
@@ -37,6 +57,9 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
+            # Also remove early message if exists
+            if tool_name in self._early_messages:
+                del self._early_messages[tool_name]
             self.logger.info("Tool '%s' removed from registry.", tool_name)
             return True
 
@@ -132,7 +155,7 @@ class LangChainToOpenAIConverter(LoggingMixin):
             if schema_params:
                 return schema_params
 
-        # Verwendung von öffentlicher Methode statt geschützter _run-Methode
+        # Use public method instead of protected _run method
         if hasattr(lc_tool, "run") and callable(getattr(lc_tool, "run")):
             sig_params = self._extract_from_signature(lc_tool, method_name="run")
             if sig_params:
@@ -190,7 +213,7 @@ class LangChainToOpenAIConverter(LoggingMixin):
         parameters = {"type": "object", "properties": {}, "required": []}
 
         try:
-            # Verwende getattr um auf die Methode zuzugreifen
+            # Use getattr to access the method
             method = getattr(lc_tool, method_name)
             sig = inspect.signature(method)
 

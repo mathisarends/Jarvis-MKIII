@@ -44,6 +44,9 @@ class EventType(Enum):
     ASSISTANT_STARTED_TOOL_CALL = auto()
     """Triggered when the assistant starts executing a tool call."""
 
+    ASSISTANT_COMPLETED_TOOL_CALL = auto()
+    """Triggered when the assistant finishes executing a tool call."""
+
 
 class EventBus(metaclass=SingletonMetaClass):
     """

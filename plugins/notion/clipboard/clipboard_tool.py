@@ -30,10 +30,15 @@ async def clipboard_tool(prompt: str) -> str:
         "error": "",
     }
 
-    result = await workflow.ainvoke(initial_state)
+    try:
+        result = await workflow.ainvoke(initial_state)
+        print("Workflow result:", result)
 
-    if result["status"] == "ERROR":
-        return result["error"]
-    if result["status"] == "DONE" and not result["formatted_content"]:
-        return "Could not find relevant content in the transcript for this topic."
-    return "Successfully added note to Jarvis Clipboard in Notion."
+        if result["status"] == "ERROR":
+            return result["error"]
+        if result["status"] == "DONE" and not result["formatted_content"]:
+            return "Could not find relevant content in the transcript for this topic."
+        return "Successfully added note to Jarvis Clipboard in Notion."
+    except Exception as e:
+        print(f"Error in clipboard_tool: {e}")
+        return f"An error occurred while processing the clipboard entry: {str(e)}"
