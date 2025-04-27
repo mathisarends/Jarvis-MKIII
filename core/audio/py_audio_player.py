@@ -30,18 +30,20 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.volume = 1.0
         self.is_busy = False
         self.event_bus = EventBus()
+        self.stream_lock = threading.Lock()
 
     @override
     def start(self):
         """Start the audio player thread"""
         self.is_playing = True
-        self.stream = self.p.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RATE,
-            output=True,
-            frames_per_buffer=CHUNK,
-        )
+        with self.stream_lock:
+            self.stream = self.p.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                output=True,
+                frames_per_buffer=CHUNK,
+            )
         self.player_thread = threading.Thread(target=self._play_audio_loop)
         self.player_thread.daemon = True
         self.player_thread.start()
@@ -58,13 +60,16 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         with self.audio_queue.mutex:
             self.audio_queue.queue.clear()
 
-        if self.stream and self.stream.is_active():
-            try:
-                self.stream.stop_stream()
-                self.stream.start_stream()
-            except Exception as e:
-                self.logger.error("Error while pausing/resuming audio stream: %s", e)
-                self._recreate_audio_stream()
+        with self.stream_lock:
+            if self.stream and self.stream.is_active():
+                try:
+                    self.stream.stop_stream()
+                    self.stream.start_stream()
+                except Exception as e:
+                    self.logger.error(
+                        "Error while pausing/resuming audio stream: %s", e
+                    )
+                    self._recreate_audio_stream()
 
         self.logger.info("Audio queue cleared, stream kept alive.")
 
@@ -79,7 +84,6 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.volume = max(0.0, min(1.0, volume))
         self.logger.info("Volume set to: %.2f", self.volume)
 
-        # Update pygame mixer volume if initialized
         if pygame.mixer.get_init():
             pygame.mixer.music.set_volume(self.volume)
 
@@ -110,10 +114,11 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.is_playing = False
         if self.player_thread:
             self.player_thread.join(timeout=2.0)
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
+        with self.stream_lock:
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+                self.stream = None
         self.p.terminate()
         self.logger.info("Audio player stopped")
 
@@ -151,16 +156,35 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
     def _recreate_audio_stream(self):
         """Recreate the audio stream if there was an error"""
         try:
-            if self.stream:
-                self.stream.close()
+            with self.stream_lock:
+                if self.stream:
+                    try:
+                        self.stream.close()
+                    except Exception as e:
+                        self.logger.warning(
+                            "Error closing stream during recreation: %s", e
+                        )
 
-            self.stream = self.p.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                output=True,
-                frames_per_buffer=CHUNK,
-            )
+                try:
+                    self.stream = self.p.open(
+                        format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        output=True,
+                        frames_per_buffer=CHUNK,
+                    )
+                except Exception as e:
+                    self.logger.error("Failed to open new stream: %s", e)
+                    # Versuche PyAudio neu zu initialisieren
+                    self.p.terminate()
+                    self.p = pyaudio.PyAudio()
+                    self.stream = self.p.open(
+                        format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        output=True,
+                        frames_per_buffer=CHUNK,
+                    )
         except Exception as e:
             self.logger.error("Failed to recreate audio stream: %s", e)
 
@@ -168,15 +192,12 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         """Thread loop for playing audio chunks"""
         while self.is_playing:
             try:
-                # Get the next audio chunk
                 chunk = self._get_next_audio_chunk()
                 if not chunk:
                     continue
 
-                # Process the chunk
                 self._process_audio_chunk(chunk)
 
-                # Mark task as done and check queue state
                 self.audio_queue.task_done()
                 self._check_queue_state()
 
@@ -211,7 +232,23 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
 
         adjusted_chunk = self._adjust_volume(chunk)
         self.current_audio_data = adjusted_chunk
-        self.stream.write(adjusted_chunk)
+
+        try:
+            with self.stream_lock:
+                if self.stream and self.stream.is_active():
+                    self.stream.write(adjusted_chunk)
+                else:
+                    self.logger.warning("Stream not active, skipping chunk")
+                    self._recreate_audio_stream()
+        except OSError as e:
+            self.logger.error("Stream write error: %s", e)
+            self._recreate_audio_stream()
+
+            if self.is_playing:
+                self.audio_queue.put(chunk)
+        except Exception as e:
+            self.logger.error("Unexpected error in stream write: %s", e)
+            self._recreate_audio_stream()
 
     def _check_queue_state(self):
         """Check the queue state and notify if playback is completed"""
@@ -226,6 +263,9 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.logger.error(
             "Error playing audio: %s\nTraceback:\n%s", error, error_traceback
         )
+
+        # Versuche den Stream neu zu erstellen, wenn ein Fehler auftritt
+        self._recreate_audio_stream()
 
         if self.is_busy:
             self.is_busy = False

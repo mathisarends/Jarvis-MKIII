@@ -41,6 +41,9 @@ class EventType(Enum):
     IDLE_TRANSITION = auto()
     """Triggered when the system returns to idle state after completed interaction or timeout."""
 
+    ASSISTANT_STARTED_TOOL_CALL = auto()
+    """Triggered when the assistant starts executing a tool call."""
+
 
 class EventBus(metaclass=SingletonMetaClass):
     """

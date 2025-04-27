@@ -3,7 +3,6 @@ import threading
 from langchain.tools import tool
 
 
-
 @tool
 def stop_conversation_tool() -> str:
     """

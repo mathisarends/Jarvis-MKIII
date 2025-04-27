@@ -1,11 +1,10 @@
 import textwrap
-from contextlib import asynccontextmanager
-from notionary import NotionPageFactory, BlockElementRegistryBuilder
 
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.llm.llm_factory import LLMFactory
+from plugins.notion.clipboard_page import ClipboardPage
 
 
 @tool
@@ -22,9 +21,8 @@ async def clipboard_tool(prompt: str) -> str:
     """
     from core.speech.voice_assistant_controller import VoiceAssistantController
 
-
     voice_assistant_controller = VoiceAssistantController.get_instance()
-    transcript = voice_assistant_controller.transcript
+    transcript = voice_assistant_controller.transcript.get_formatted_history()
 
     clipboard = ClipboardPage()
 
@@ -115,53 +113,3 @@ Please create a well-structured note that captures the key information.
     except Exception as e:
         error_type = type(e).__name__
         return f"Error creating clipboard entry ({error_type}): {e}"
-
-
-class ClipboardPage:
-    def __init__(self):
-        """
-        Initialize the ClipboardPage.
-        """
-        self.page = None
-
-    async def initialize(self):
-        """Initialize the Notion page."""
-        self.page = await NotionPageFactory.from_page_name("Jarvis Clipboard")
-        self.page.block_registry = (
-            BlockElementRegistryBuilder()
-            .start_minimal()
-            .with_dividers()
-            .with_todos()
-            .with_code()
-            .build()
-        )
-
-    @asynccontextmanager
-    async def session(self):
-        """
-        Context manager for ClipboardPage session.
-        Ensures the Notion page is properly initialized.
-        """
-        await self.initialize()
-        yield self
-
-    async def add_note(self, content):
-        """
-        Add a note to the Notion page.
-
-        Args:
-            content: Markdown content to add.
-        """
-        if not self.page:
-            await self.initialize()
-
-        await self.page.append_markdown(markdown=content)
-
-    def get_formatting_system_prompt(self) -> str:
-        """
-        Format the prompt for Notion.
-        """
-        if not self.page:
-            raise ValueError("Page not initialized. Call initialize() first.")
-
-        return self.page.block_registry.generate_llm_prompt()

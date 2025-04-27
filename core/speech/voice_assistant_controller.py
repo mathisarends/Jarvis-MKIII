@@ -61,6 +61,7 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
         self._should_stop = False
         self._user_is_speaking = False
         self._assistant_is_speaking = False
+        self._assistant_is_making_tool_call = False
 
         self._last_activity_time = 0
 
@@ -98,6 +99,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
         self.event_bus.subscribe(
             event_type=EventType.USER_INPUT_TRANSCRIPTION_COMPLETED,
             callback=self._handle_user_input_transcription_completed,
+        )
+
+        self.event_bus.subscribe(
+            event_type=EventType.ASSISTANT_STARTED_TOOL_CALL,
+            callback=self._handle_assistant_started_tool_call,
         )
 
     async def initialize(self):
@@ -186,7 +192,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
     async def _monitor_timeout(self):
         """Monitor idle timeout in a separate task"""
         while self._conversation_active and not self._should_stop:
-            if self._user_is_speaking or self._assistant_is_speaking:
+            if (
+                self._user_is_speaking
+                or self._assistant_is_speaking
+                or self._assistant_is_making_tool_call
+            ):
                 await asyncio.sleep(0.5)
                 continue
 
@@ -262,6 +272,8 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
 
         self.logger.info("Assistant response completed: '%s'", transcript_text)
         self._update_activity_time()
+        # Important activity time has to be updated first otherwise the assistant could be cancelled due to idle timeout
+        self._assistant_is_making_tool_call = False
 
     def _handle_audio_playback_started(self):
         """Handler for start of audio playback"""
@@ -273,6 +285,11 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
         """Handler for end of audio playback"""
         self.logger.info("Assistant stopped responding")
         self._assistant_is_speaking = False
+        self._update_activity_time()
+
+    def _handle_assistant_started_tool_call(self):
+        """Handler for when the assistant starts a tool call"""
+        self._assistant_is_making_tool_call = True
         self._update_activity_time()
 
     # Useful for stop tool

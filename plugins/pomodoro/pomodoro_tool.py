@@ -10,6 +10,7 @@ from plugins.pomodoro.pomodoro_timer_manager import PomodoroTimerManager
 
 DEFAULT_POMODORO_MINUTES = 90
 
+
 def _get_system_prompt() -> SystemMessage:
     """Create the system prompt for the LLM."""
     return SystemMessage(

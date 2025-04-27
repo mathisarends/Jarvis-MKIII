@@ -173,8 +173,6 @@ class EventRouter(LoggingMixin):
         self.audio_handler = audio_handler
         self.tool_handler = tool_handler
         self.ws_manager = ws_manager
-        self._current_response_start_time_ms: int = 0
-        self._last_assistant_message_item_id: str = ""
 
     async def process_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """
@@ -194,7 +192,7 @@ class EventRouter(LoggingMixin):
             return
 
         if event_type == "input_audio_buffer.speech_stopped":
-            self._handle_speech_stopped(response)
+            self._handle_speech_stopped()
             return
 
         if event_type == "conversation.item.input_audio_transcription.completed":
@@ -217,15 +215,17 @@ class EventRouter(LoggingMixin):
         self.logger.info("Assistant response completed")
         done_message = DoneMessage.from_json(response)
 
-        self.event_bus.publish(
-            EventType.ASSISTANT_RESPONSE_COMPLETED, data=done_message.transcript
-        )
-
-        self._last_assistant_message_item_id = done_message.message_item_id
-
         if done_message.contains_tool_call:
+            self.event_bus.publish_async(
+                event_type=EventType.ASSISTANT_STARTED_TOOL_CALL
+            )
+
             await self.tool_handler.handle_function_call_in_response(
                 response, self.ws_manager.connection
+            )
+        else:
+            self.event_bus.publish(
+                EventType.ASSISTANT_RESPONSE_COMPLETED, data=done_message.transcript
             )
 
     async def _handle_speech_started(self) -> None:
@@ -235,9 +235,8 @@ class EventRouter(LoggingMixin):
         self.audio_handler.stop_playback()
         self.event_bus.publish(EventType.USER_SPEECH_STARTED)
 
-    def _handle_speech_stopped(self, response: Dict[str, Any]) -> None:
+    def _handle_speech_stopped(self) -> None:
         """Processes speech_stopped events"""
-        self._current_response_start_time_ms = response.get("audio_end_ms", 0)
         self.event_bus.publish(event_type=EventType.USER_SPEECH_ENDED)
 
     def _handle_transcription_completed(self, response: Dict[str, Any]) -> None:
