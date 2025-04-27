@@ -1,6 +1,7 @@
 from langchain.tools import tool
 from plugins.notion.clipboard.clipboard_workflow import create_clipboard_workflow
 
+
 @tool
 async def clipboard_tool(prompt: str) -> str:
     """
@@ -17,20 +18,20 @@ async def clipboard_tool(prompt: str) -> str:
 
     voice_assistant_controller = VoiceAssistantController.get_instance()
     transcript = voice_assistant_controller.transcript.get_formatted_history()
-    
+
     workflow = create_clipboard_workflow()
-    
+
     initial_state = {
         "prompt": prompt,
         "transcript": transcript,
         "relevant_transcript": "",
         "formatted_content": "",
         "status": "EXTRACTING",
-        "error": ""
+        "error": "",
     }
-    
+
     result = await workflow.ainvoke(initial_state)
-    
+
     if result["status"] == "ERROR":
         return result["error"]
     if result["status"] == "DONE" and not result["formatted_content"]:

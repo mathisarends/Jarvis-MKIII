@@ -43,6 +43,7 @@ class RealtimeToolHandler(LoggingMixin):
 
     def __init__(self, tool_registry: ToolRegistry):
         self.tool_registry = tool_registry
+        self.most_recent_tool_call_id = ""
 
     async def handle_function_call_in_response(
         self, response: DoneResponseWithToolCall, connection: WebSocketClientProtocol
@@ -80,6 +81,8 @@ class RealtimeToolHandler(LoggingMixin):
         self.logger.info(
             "Processing function call: %s with call_id: %s", function_name, call_id
         )
+
+        self.most_recent_tool_call_id = call_id
 
         try:
             arguments = json.loads(arguments_str)

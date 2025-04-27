@@ -216,9 +216,7 @@ class EventRouter(LoggingMixin):
         done_message = DoneMessage.from_json(response)
 
         if done_message.contains_tool_call:
-            self.event_bus.publish_async(
-                event_type=EventType.ASSISTANT_STARTED_TOOL_CALL
-            )
+            self.event_bus.publish(event_type=EventType.ASSISTANT_STARTED_TOOL_CALL)
 
             await self.tool_handler.handle_function_call_in_response(
                 response, self.ws_manager.connection

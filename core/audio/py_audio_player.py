@@ -1,4 +1,5 @@
 import base64
+import time
 import threading
 import queue
 import os
@@ -57,19 +58,28 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         """
         self.logger.info("Speech started — clearing queue.")
 
+        # Queue leeren
         with self.audio_queue.mutex:
             self.audio_queue.queue.clear()
 
+        # Stream sofort stoppen
         with self.stream_lock:
             if self.stream and self.stream.is_active():
                 try:
                     self.stream.stop_stream()
+                    time.sleep(0.05)
                     self.stream.start_stream()
                 except Exception as e:
                     self.logger.error(
                         "Error while pausing/resuming audio stream: %s", e
                     )
                     self._recreate_audio_stream()
+
+        # Sofort Status zurücksetzen
+        if self.is_busy:
+            self.is_busy = False
+            self.current_audio_data = bytes()
+            self._safely_notify_playback_completed()
 
         self.logger.info("Audio queue cleared, stream kept alive.")
 
@@ -208,13 +218,11 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
 
     def _get_next_audio_chunk(self):
         """Get the next audio chunk from the queue"""
-        if self.audio_queue.empty() and not self.is_busy:
-            try:
-                return self.audio_queue.get(timeout=0.5)
-            except queue.Empty:
-                return None
-        else:
-            return self.audio_queue.get(timeout=0.5)
+        try:
+            # Kürzeres Timeout für schnelleres Reagieren
+            return self.audio_queue.get(timeout=0.1)
+        except queue.Empty:
+            return None
 
     def _process_audio_chunk(self, chunk):
         """Process and play an audio chunk"""

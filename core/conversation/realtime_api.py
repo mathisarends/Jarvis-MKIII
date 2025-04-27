@@ -78,10 +78,10 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Initializes the tool registry and registers all available tools.
         """
         try:
-            """ self.tool_registry.register_tool(stop_conversation_tool)
+            """self.tool_registry.register_tool(stop_conversation_tool)
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(web_search_tool)
-            self.tool_registry.register_tool(pomodoro_tool) """
+            self.tool_registry.register_tool(pomodoro_tool)"""
             self.tool_registry.register_tool(clipboard_tool)
             """ self.tool_registry.register_tool(set_volume_tool)
             self.tool_registry.register_tool(get_volume_tool) """

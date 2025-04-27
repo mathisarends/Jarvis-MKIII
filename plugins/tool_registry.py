@@ -17,7 +17,9 @@ class ToolRegistry(LoggingMixin, metaclass=SingletonMetaClass):
         self._tools: Dict[str, BaseTool] = {}
         self._converter = LangChainToOpenAIConverter()
 
-    def register_tool(self, tool: BaseTool) -> None:
+    # TODO: Entweder kann man diese long_running Logik hier über einen Dekorator lösen oder man macht
+    # das etwas unsauberer hier über die registry
+    def register_tool(self, tool: BaseTool, long_running = False) -> None:
         """
         Registers a single tool in the registry.
         """
