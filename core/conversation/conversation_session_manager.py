@@ -32,10 +32,7 @@ class ConversationSessionManager(LoggingMixin):
         return {
             "type": "session.update",
             "session": {
-                "turn_detection": {
-                    "type": "semantic_vad",
-                    "eagerness": "low",
-                },
+                "turn_detection": {"type": "server_vad"},
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "voice": self.voice,
@@ -47,6 +44,9 @@ class ConversationSessionManager(LoggingMixin):
                     "model": self.transcription_model,
                     "prompt": "Die Spracheingabe erfolgt hauptsächlich auf Deutsch, enthält jedoch häufig englische Fachbegriffe aus dem Bereich der Programmierung. Bitte transkribiere entsprechend.",
                 },
+                "input_audio_noise_reduction": {
+                    "type": "far_field",
+                }
             },
         }
 

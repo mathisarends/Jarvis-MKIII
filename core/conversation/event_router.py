@@ -172,6 +172,8 @@ class EventRouter(LoggingMixin):
         self.audio_handler = audio_handler
         self.tool_handler = tool_handler
         self.ws_manager = ws_manager
+        
+        self.vad_enabled = True
 
     async def process_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """
@@ -186,10 +188,14 @@ class EventRouter(LoggingMixin):
             await self._handle_response_done(response)
             return
 
-        # TODO: This gets triggered when the assistant is speaking itself which is definitely not good for pricing.
+        # VAD control: Turn on VAD when assistant stops speaking
+        if event_type == "response.audio.done":
+            print("response_audio_stopped")
+            await self._enable_vad()
+            return
+            
+        # Original event handling continues...
         if event_type == "input_audio_buffer.speech_started":
-            print("User speech input started")
-            print("===")
             await self._handle_speech_started()
             return
 
@@ -202,6 +208,7 @@ class EventRouter(LoggingMixin):
             return
 
         if event_type == "response.audio.delta":
+            await self._disable_vad()
             self.audio_handler.handle_audio_delta(response)
             return
 
@@ -250,3 +257,45 @@ class EventRouter(LoggingMixin):
         self.logger.info("Event received: %s", event_type)
         if event_type == "error":
             self.logger.error("API error: %s", response)
+
+
+    async def _disable_vad(self) -> None:
+        """
+        Disable VAD when the assistant starts speaking to prevent self-triggering.
+        """        
+        if not self.vad_enabled:
+            return
+        
+        self.logger.info("Assistant started speaking - disabling VAD")
+        
+        try:
+            await self.ws_manager.send_message({
+                "type": "session.update",
+                "session": { "turn_detection": None }
+            })
+            self.vad_enabled = False
+            self.logger.debug("VAD disabled during assistant speech")
+        except Exception as e:
+            self.logger.error(f"Failed to disable VAD: {e}")
+
+    async def _enable_vad(self) -> None:
+        """
+        Re-enable VAD when the assistant stops speaking.
+        """
+        self.logger.debug("Assistant stopped speaking - re-enabling VAD")
+        
+        # Create a session update to re-enable original VAD settings
+        session_update = {
+            "type": "session.update",
+            "session": {
+                "turn_detection": {"type": "server_vad"}  # Restore original VAD settings
+            }
+        }
+        
+        # Send the session update via WebSocket
+        try:
+            await self.ws_manager.send_message(session_update)
+            self.vad_enabled = True
+            self.logger.debug("VAD re-enabled after assistant speech")
+        except Exception as e:
+            self.logger.error(f"Failed to re-enable VAD: {e}")

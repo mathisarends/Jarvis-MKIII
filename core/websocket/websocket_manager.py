@@ -1,7 +1,8 @@
 import asyncio
-import json
 import base64
-from typing import Optional, Dict, Any, Callable
+import json
+from typing import Any, Callable, Dict, Optional
+
 import websockets
 
 from shared.logging_mixin import LoggingMixin
@@ -61,6 +62,7 @@ class WebSocketManager(LoggingMixin):
 
         try:
             await self.connection.send(json.dumps(message))
+            
             return True
         except Exception as e:
             self.logger.error("Error sending message: %s", e)
