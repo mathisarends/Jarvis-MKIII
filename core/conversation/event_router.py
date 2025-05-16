@@ -266,6 +266,7 @@ class EventRouter(LoggingMixin):
         if not self.vad_enabled:
             return
         
+        print("[VAD] Disabling VAD - assistant is speaking")
         self.logger.info("Assistant started speaking - disabling VAD")
         
         try:
@@ -274,21 +275,27 @@ class EventRouter(LoggingMixin):
                 "session": { "turn_detection": None }
             })
             self.vad_enabled = False
+            print("[VAD] VAD disabled successfully")
             self.logger.debug("VAD disabled during assistant speech")
         except Exception as e:
+            print(f"[VAD] ERROR: Failed to disable VAD: {e}")
             self.logger.error(f"Failed to disable VAD: {e}")
 
     async def _enable_vad(self) -> None:
         """
         Re-enable VAD when the assistant stops speaking.
         """
+        if self.vad_enabled:
+            return
+            
+        print("[VAD] Re-enabling VAD - assistant stopped speaking")
         self.logger.debug("Assistant stopped speaking - re-enabling VAD")
         
         # Create a session update to re-enable original VAD settings
         session_update = {
             "type": "session.update",
             "session": {
-                "turn_detection": {"type": "server_vad"}  # Restore original VAD settings
+                "turn_detection": {"type": "server_vad"}
             }
         }
         
@@ -296,6 +303,8 @@ class EventRouter(LoggingMixin):
         try:
             await self.ws_manager.send_message(session_update)
             self.vad_enabled = True
+            print("[VAD] VAD re-enabled successfully")
             self.logger.debug("VAD re-enabled after assistant speech")
         except Exception as e:
+            print(f"[VAD] ERROR: Failed to re-enable VAD: {e}")
             self.logger.error(f"Failed to re-enable VAD: {e}")

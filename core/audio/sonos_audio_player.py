@@ -15,6 +15,7 @@ from typing_extensions import override
 
 from core.audio.audio_player_base import AudioPlayer
 from shared.event_bus import EventBus, EventType
+from shared.singleton_meta_class import SingletonMetaClass
 
 
 class CustomHandler(SimpleHTTPRequestHandler):
@@ -58,8 +59,8 @@ class CustomHandler(SimpleHTTPRequestHandler):
         return translated_path
 
 
-class SonosHTTPServer:
-    """Simple HTTP server to serve audio files for Sonos."""
+class SonosHTTPServer(metaclass=SingletonMetaClass):
+    """Simple HTTP server to serve audio files for Sonos with singleton pattern."""
 
     def __init__(self, project_dir=None, port=8000):
         """
@@ -80,6 +81,7 @@ class SonosHTTPServer:
         self._server = None
         self._server_thread = None
         self._is_running = False
+        self._ref_count = 0  # Reference counter for users
 
         # The IP address of the server in the local network
         self.server_ip = self._get_local_ip()
@@ -121,6 +123,7 @@ class SonosHTTPServer:
             print(f"❌ Error starting HTTP server: {e}")
             return self
 
+
     def stop(self):
         """Stop the HTTP server."""
         if not self._is_running or self._server is None:
@@ -130,7 +133,7 @@ class SonosHTTPServer:
             self._server.shutdown()
             self._server.server_close()
             self._is_running = False
-            print(f"✅ HTTP server on port {self.port} stopped")
+            print(f"✅ HTTP server on port {self.port} stopped (no more clients)")
             return True
         except Exception as e:
             print(f"❌ Error stopping HTTP server: {e}")
@@ -161,10 +164,9 @@ class SonosHTTPServer:
 
         url_path = str(rel_path).replace("\\", "/")
         url = f"http://{self.server_ip}:{self.port}/{url_path}"
-
+        
         print(f"🔍 Created URL: {url}")
         return url
-
 
 class SonosPlayer(AudioPlayer):
     """Implementation of AudioPlayer for Sonos speakers using queue functionality"""
@@ -207,7 +209,7 @@ class SonosPlayer(AudioPlayer):
         os.makedirs(self._temp_dir, exist_ok=True)
 
         # Start the HTTP server
-        self._http_server = SonosHTTPServer(str(self.project_dir), port)
+        self._http_server = SonosHTTPServer.get_instance(project_dir, port)
 
         # Queue management
         self._audio_queue = []
@@ -335,11 +337,8 @@ class SonosPlayer(AudioPlayer):
             except Exception as e:
                 self.logger.warning("Error restoring Sonos state: %s", e)
 
-        # HTTP-Server stoppen
-        self._http_server.stop()
-
         # Tempverzeichnis aufräumen
-        """ self._cleanup_temp_files() """
+        self._cleanup_temp_files()
 
         self.logger.info("SonosPlayer stopped")
         return True

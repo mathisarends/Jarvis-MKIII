@@ -43,9 +43,6 @@ class ConversationSessionManager(LoggingMixin):
                 "input_audio_transcription": {
                     "model": self.transcription_model,
                     "prompt": "Die Spracheingabe erfolgt hauptsächlich auf Deutsch, enthält jedoch häufig englische Fachbegriffe aus dem Bereich der Programmierung. Bitte transkribiere entsprechend.",
-                },
-                "input_audio_noise_reduction": {
-                    "type": "far_field",
                 }
             },
         }
