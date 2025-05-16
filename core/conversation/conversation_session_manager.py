@@ -32,7 +32,10 @@ class ConversationSessionManager(LoggingMixin):
         return {
             "type": "session.update",
             "session": {
-                "turn_detection": {"type": "server_vad"},
+                "turn_detection": {
+                    "type": "semantic_vad",
+                    "eagerness": "low",
+                },
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "voice": self.voice,

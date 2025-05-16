@@ -1,12 +1,11 @@
-from typing import Dict, Any, List
 from functools import cached_property
+from typing import Any, Dict, List
 
-from core.conversation.realtime_tool_handler import RealtimeToolHandler
 from core.audio.response_audio_handler import ResponseAudioHandler
+from core.conversation.realtime_tool_handler import RealtimeToolHandler
 from core.websocket.websocket_manager import WebSocketManager
-
-from shared.logging_mixin import LoggingMixin
 from shared.event_bus import EventBus, EventType
+from shared.logging_mixin import LoggingMixin
 
 
 class DoneMessage(LoggingMixin):
@@ -187,7 +186,10 @@ class EventRouter(LoggingMixin):
             await self._handle_response_done(response)
             return
 
+        # TODO: This gets triggered when the assistant is speaking itself which is definitely not good for pricing.
         if event_type == "input_audio_buffer.speech_started":
+            print("User speech input started")
+            print("===")
             await self._handle_speech_started()
             return
 

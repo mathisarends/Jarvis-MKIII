@@ -181,7 +181,7 @@ class SonosPlayer(AudioPlayer):
         # Basic attributes
         self.is_playing = False
         self.is_busy = False
-        self.volume = 0.5
+        self.volume = 0.25
         self.event_bus = EventBus()
 
         # Sonos-specific attributes

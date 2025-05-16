@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import os
+
 from dotenv import load_dotenv
 
 from core.audio.audio_player_factory import AudioPlayerFactory
 
 """ from core.audio.py_audio_player import PyAudioPlayer """
+from core.audio.py_audio_player import PyAudioPlayer
 from core.audio.sonos_audio_player import SonosPlayer
 from core.speech.voice_assistant_controller import VoiceAssistantController
 from shared.logging_mixin import setup_logging
@@ -24,7 +26,7 @@ async def main():
 
     logger.info("Starting voice assistant...")
 
-    AudioPlayerFactory.initialize_with(SonosPlayer)
+    AudioPlayerFactory.initialize_with(PyAudioPlayer)
     """ await LightController.create() """
 
     try:
