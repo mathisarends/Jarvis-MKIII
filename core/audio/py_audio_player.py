@@ -14,10 +14,8 @@ import pygame
 from resources.config import FORMAT, CHANNELS, CHUNK, RATE
 from core.audio.audio_player_base import AudioPlayer
 from shared.event_bus import EventBus, EventType
-from shared.logging_mixin import LoggingMixin
 
-
-class PyAudioPlayer(AudioPlayer, LoggingMixin):
+class PyAudioPlayer(AudioPlayer):
     """PyAudio implementation of the AudioPlayerBase class with sound file playback"""
 
     @override

@@ -4,7 +4,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.audio.audio_player_base import AudioPlayer
 from core.audio.audio_player_factory import AudioPlayerFactory
-from core.audio.py_audio_player import PyAudioPlayer
 from core.llm.llm_factory import LLMFactory
 
 
@@ -82,7 +81,7 @@ async def set_volume_tool(volume_instruction: str) -> str:
             return "Volume set to 50% (default)"
 
     except Exception:
-        audio_player = PyAudioPlayer()
+        audio_player = AudioPlayerFactory.get_shared_instance()
         new_volume = audio_player.set_volume_level(0.5)
         return "Volume set to 50% (default)"
 
@@ -95,7 +94,7 @@ def get_volume_tool() -> str:
     Returns:
         The current volume level as a percentage
     """
-    audio_player = PyAudioPlayer()
+    audio_player = AudioPlayerFactory.get_shared_instance()
     current_volume = audio_player.get_volume_level()
     percent = int(current_volume * 100)
     return f"Current volume is {percent}%"

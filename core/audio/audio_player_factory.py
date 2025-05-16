@@ -45,7 +45,9 @@ class AudioPlayerFactory:
 
         cls._instance = player_class()
         cls._player_class = player_class
-
+        
+        cls._instance.start()
+        
         if play_sound:
             cls._instance.play_sound("startup")
 
