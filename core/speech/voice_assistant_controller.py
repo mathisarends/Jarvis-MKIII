@@ -160,7 +160,6 @@ class VoiceAssistantController(LoggingMixin, metaclass=SingletonMetaClass):
                     await self._handle_conversation()
                     self.event_bus.publish(EventType.IDLE_TRANSITION)
                     self.audio_player.play_sound("return_to_idle")
-                    
 
             except asyncio.CancelledError:
                 self.logger.info("Voice assistant task cancelled")

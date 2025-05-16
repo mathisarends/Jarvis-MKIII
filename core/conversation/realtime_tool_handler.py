@@ -37,6 +37,7 @@ class FunctionCallItem(TypedDict):
     call_id: str
     arguments: str
 
+
 class RealtimeToolHandler(LoggingMixin):
     """
     Handles function calls in OpenAI Realtime API responses, executes tools,
@@ -116,9 +117,7 @@ class RealtimeToolHandler(LoggingMixin):
             await self.send_function_result(call_id, result, connection)
             await self.create_new_response(connection)
 
-            self.event_bus.publish(
-                EventType.ASSISTANT_COMPLETED_TOOL_CALL
-            )
+            self.event_bus.publish(EventType.ASSISTANT_COMPLETED_TOOL_CALL)
             return
 
         # Long-running tool execution flow
@@ -151,8 +150,8 @@ class RealtimeToolHandler(LoggingMixin):
             "type": "response.create",
             "response": {
                 "modalities": ["text", "audio"],
-                "instructions": f"Informiere den Nutzer, dass das Tool ausgeführt wird mit einer Nachricht wie: '{message}'"
-            }
+                "instructions": f"Informiere den Nutzer, dass das Tool ausgeführt wird mit einer Nachricht wie: '{message}'",
+            },
         }
 
         await connection.send(json.dumps(start_message))

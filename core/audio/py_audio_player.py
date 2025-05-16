@@ -1,19 +1,19 @@
 import base64
-import time
-import threading
-import queue
 import os
+import queue
+import threading
+import time
 import traceback
-from typing import override
 
 import numpy as np
-
 import pyaudio
 import pygame
+from typing_extensions import override
 
-from resources.config import FORMAT, CHANNELS, CHUNK, RATE
 from core.audio.audio_player_base import AudioPlayer
+from resources.config import CHANNELS, CHUNK, FORMAT, RATE
 from shared.event_bus import EventBus, EventType
+
 
 class PyAudioPlayer(AudioPlayer):
     """PyAudio implementation of the AudioPlayerBase class with sound file playback"""

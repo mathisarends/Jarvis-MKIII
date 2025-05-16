@@ -5,6 +5,7 @@ from typing import Optional, Callable, Dict, Any
 DEFAULT_WAKE_SOUND = "wake-up-focus"
 DEFAULT_GET_UP_SOUND = "get-up-blossom"
 
+
 @dataclass
 class AlarmConfig:
     """Konfiguration für den Alarm-Manager."""
@@ -34,7 +35,5 @@ class AlarmItem:
         self.wake_sound_id = wake_sound_id
         self.get_up_sound_id = get_up_sound_id
         self.callback = callback
-        self.extra = (
-            extra or {}
-        )
+        self.extra = extra or {}
         self.triggered = False
