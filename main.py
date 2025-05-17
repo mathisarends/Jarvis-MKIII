@@ -27,7 +27,6 @@ async def main():
     logger.info("Starting voice assistant...")
 
     AudioPlayerFactory.initialize_with(SonosPlayer)
-    """ await LightController.create() """
 
     try:
         voice_assistant = VoiceAssistantController(

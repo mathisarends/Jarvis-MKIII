@@ -2,6 +2,7 @@ import array
 import asyncio
 import base64
 import os
+import re
 import socket
 import threading
 import time
@@ -17,80 +18,121 @@ from typing_extensions import override
 from core.audio.audio_player_base import AudioPlayer
 from resources.config import RATE
 from shared.event_bus import EventBus, EventType
-from shared.logging_mixin import LoggingMixin
 from shared.singleton_meta_class import SingletonMetaClass
 
 
-class CustomHandler(SimpleHTTPRequestHandler, LoggingMixin):
-    """Enhanced HTTP handler with caching and optimized logging"""
+class CustomHandler(SimpleHTTPRequestHandler):
+    """Verbesserter HTTP-Handler mit Deduplizierung von Audio-Chunk-Anfragen"""
+    
+    def log_message(self, format, *args):
+        # Suppress HTTP request logs for cleaner output
+        pass
 
     rbufsize = 64 * 1024
-
+    
+    # Cache für Anfragen
     _request_cache = {}
-
-    def log_message(self, format, *args):
-        # Suppress default logging
-        pass
+    # Cache für bereits gesendete Audio-Chunks
+    _audio_chunk_cache = set()
+    
+    # Audio-Chunk-Pattern für Erkennung
+    _audio_chunk_pattern = re.compile(r"/resources/sounds/temp/audio_chunk_\d+\.mp3$")
 
     def handle(self):
         try:
             super().handle()
         except (BrokenPipeError, ConnectionResetError):
-            self.logger.debug("Connection closed by client")
+            pass
+
+    def is_audio_chunk(self, path):
+        """Prüft, ob der Pfad einem Audio-Chunk entspricht"""
+        return bool(self._audio_chunk_pattern.match(path))
+        
+    def send_not_modified(self):
+        """Sendet 304 Not Modified Antwort"""
+        self.send_response(304)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
-        """Handle GET requests with minimal logging"""
+        """Handle GET requests with deduplication for audio chunks"""
+        # Prüfen, ob es sich um einen Audio-Chunk handelt und ob dieser bereits gesendet wurde
+        if self.is_audio_chunk(self.path) and self.path in self._audio_chunk_cache:
+            # Wenn ja, und es keine Range-Anfrage ist (wichtig für Audio-Streaming)
+            if 'Range' not in self.headers:
+                print(f"🔄 Preventing duplicate request for: {self.path}")
+                self.send_not_modified()
+                return
+        
+        # Standardmäßiges Logging
         path_key = f"get_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-
-        if current_time - last_time < 5:
-            self.logger.debug(f"Repeat GET request: {self.path}")
+        
+        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
+            print(f"↩️ Repeat GET request for: {self.path}")
         else:
-            self.logger.debug(f"GET request: {self.path}")
+            print(f"🔍 HTTP GET Request for: {self.path}")
             self._request_cache[path_key] = current_time
-
+            
+        # Wenn es ein Audio-Chunk ist, zum Cache hinzufügen
+        if self.is_audio_chunk(self.path):
+            # Nur in den Cache aufnehmen, wenn die Datei existiert
+            if os.path.exists(self.translate_path(self.path)):
+                self._audio_chunk_cache.add(self.path)
+        
         return super().do_GET()
 
     def do_HEAD(self):
-        """Handle HEAD requests with minimal logging"""
+        """Handle HEAD requests with similar deduplication"""
+        # Für HEAD-Anfragen nutzen wir die gleiche Deduplizierung
+        if self.is_audio_chunk(self.path) and self.path in self._audio_chunk_cache:
+            if 'Range' not in self.headers:
+                print(f"🔄 Preventing duplicate HEAD request for: {self.path}")
+                self.send_not_modified()
+                return
+            
         path_key = f"head_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-
+        
         if current_time - last_time < 5:
-            self.logger.debug(f"Repeat HEAD request: {self.path}")
+            print(f"↩️ Repeat HEAD request for: {self.path}")
         else:
-            self.logger.debug(f"HEAD request: {self.path}")
+            print(f"🔍 HTTP HEAD Request for: {self.path}")
             self._request_cache[path_key] = current_time
-
+            
         return super().do_HEAD()
 
     def end_headers(self):
-        """Add performance-focused caching headers"""
-        # Cache-Control: Controls client-side caching behavior
-        # - max-age=300: Allows caching for 5 minutes
-        # - public: Can be cached by shared/proxy caches
-        # - immutable: Indicates the resource content won't change
-        self.send_header("Cache-Control", "public, max-age=300, immutable")
-
-        # ETag: Allows conditional requests based on file metadata
+        """Add optimized caching headers"""
+        # Cache-Control mit optimierten Optionen für Audio-Streaming
+        if self.is_audio_chunk(self.path):
+            # Stärkeres Caching für Audio-Chunks
+            self.send_header("Cache-Control", "public, max-age=3600, immutable")
+        else:
+            # Normal Caching für andere Ressourcen
+            self.send_header("Cache-Control", "public, max-age=300")
+        
+        # ETag für effizientes Caching
         file_path = self.translate_path(self.path)
         if os.path.exists(file_path):
             stat_result = os.stat(file_path)
             etag = f'"{stat_result.st_mtime}_{stat_result.st_size}"'
             self.send_header("ETag", etag)
-
-        # Accept-Ranges: Enables support for partial requests (e.g., media streaming)
+            
+            # Last-Modified für HTTP-Caching
+            last_modified = self.date_time_string(int(stat_result.st_mtime))
+            self.send_header("Last-Modified", last_modified)
+        
+        # Wichtige Header für Audio-Streaming
         self.send_header("Accept-Ranges", "bytes")
-
-        # Connection: Keep-Alive improves performance on multiple requests
         self.send_header("Connection", "keep-alive")
-
+        
         super().end_headers()
 
     def guess_type(self, path):
-        """Optimized MIME type guessing for audio files"""
+        """Overridden method to provide correct MIME types for audio files."""
         _, ext = os.path.splitext(path)
         if ext.lower() == ".wav":
             return "audio/wav"
@@ -99,23 +141,25 @@ class CustomHandler(SimpleHTTPRequestHandler, LoggingMixin):
         return super().guess_type(path)
 
     def translate_path(self, path):
-        """Path resolution with minimal logging and early return optimization"""
+        """Overridden to ensure proper file serving with optimized logging."""
         translated_path = super().translate_path(path)
-
+        
         path_key = f"path_{path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-
+        
         if current_time - last_time < 5:
+            if not os.path.exists(translated_path):
+                print(f"❌ File still NOT found: {translated_path}")
             return translated_path
-
+            
         self._request_cache[path_key] = current_time
-
+        
         if os.path.exists(translated_path):
-            self.logger.debug(f"Serving file: {translated_path}")
+            print(f"✅ File exists: {translated_path}")
         else:
-            self.logger.warning(f"File not found: {translated_path}")
-
+            print(f"❌ File NOT found: {translated_path}")
+                
         return translated_path
 
 
@@ -337,10 +381,6 @@ class SonosPlayer(AudioPlayer):
             # Set moderate volume
             self._sonos_device.volume = int(self.volume * 100)
             self.logger.debug("Set Sonos volume to %d%%", int(self.volume * 100))
-
-            # Bereinigen des Temp-Verzeichnisses beim Start
-            self._cleanup_temp_files()
-
             # Save the current queue and state for restoration later
             self._current_playback_session = {
                 "uri": None,
@@ -422,7 +462,7 @@ class SonosPlayer(AudioPlayer):
                 self.logger.warning("Error restoring Sonos state: %s", e)
 
         # Tempverzeichnis aufräumen
-        self._cleanup_temp_files()
+        self._cleanup_all_temp_files()
 
         self.logger.info("SonosPlayer stopped")
         return True
@@ -541,93 +581,6 @@ class SonosPlayer(AudioPlayer):
         except Exception as e:
             self.logger.error("Error playing sound %s: %s", sound_name, e)
             return False
-
-    def connect_to_device(self, device_name=None, ip_address=None) -> bool:
-        """
-        Connect to a Sonos device by name or IP address
-
-        Args:
-            device_name: Name of the Sonos device
-            ip_address: IP address of the Sonos device
-
-        Returns:
-            True if connection successful, False otherwise
-        """
-        try:
-            # Connection via IP address
-            if ip_address:
-                self._sonos_device = SoCo(ip_address)
-                self.logger.info(
-                    "Connected to Sonos device: %s (%s)",
-                    self._sonos_device.player_name,
-                    ip_address,
-                )
-                self._initialize_sonos_player()
-                return True
-
-            # Connection via name
-            if device_name:
-                if not self._sonos_devices:
-                    self._discover_devices()
-
-                for device in self._sonos_devices:
-                    if device_name.lower() in device.player_name.lower():
-                        self._sonos_device = device
-                        self.logger.info(
-                            "Connected to Sonos device: %s", device.player_name
-                        )
-                        self._initialize_sonos_player()
-                        return True
-
-                self.logger.error("No Sonos device with name '%s' found", device_name)
-                return False
-
-            # Automatic connection to the first device
-            if not self._sonos_devices:
-                self._discover_devices()
-
-            if self._sonos_devices:
-                self._sonos_device = self._sonos_devices[0]
-                self.logger.info(
-                    "Automatically connected to Sonos device: %s",
-                    self._sonos_device.player_name,
-                )
-                self._initialize_sonos_player()
-                return True
-            else:
-                self.logger.error("No Sonos devices found on the network")
-                return False
-
-        except Exception as e:
-            self.logger.error("Error connecting to Sonos: %s", e)
-            return False
-
-    def get_available_devices(self) -> List[Dict[str, str]]:
-        """
-        Return a list of all available Sonos devices
-
-        Returns:
-            List of dictionaries with 'name' and 'ip' of devices
-        """
-        self._discover_devices()
-        return [
-            {"name": device.player_name, "ip": device.ip_address}
-            for device in self._sonos_devices
-        ]
-
-    def get_current_device(self) -> Optional[Dict[str, str]]:
-        """
-        Return information about the currently connected Sonos device
-
-        Returns:
-            Dictionary with 'name' and 'ip' of the device or None
-        """
-        if self._sonos_device:
-            return {
-                "name": self._sonos_device.player_name,
-                "ip": self._sonos_device.ip_address,
-            }
-        return None
 
     def _discover_devices(self):
         """Search for Sonos devices on the network"""
@@ -827,8 +780,11 @@ class SonosPlayer(AudioPlayer):
             self._queued_urls.clear()
 
             # Add the first audio file to the queue
-            position = self._add_to_sonos_queue_in_sequence(first_audio_url)
+            self._add_to_sonos_queue_in_sequence(first_audio_url)
 
+            # Kurze Verzögerung einbauen, um sicherzustellen, dass der erste Chunk vollständig geladen ist
+            self.logger.debug("Waiting for first audio chunk to be fully indexed...")
+            
             # Start playing the queue
             self._sonos_device.play_from_queue(0)
 
@@ -917,7 +873,7 @@ class SonosPlayer(AudioPlayer):
                             f"Re-added {url.split('/')[-1]} at position {pos}"
                         )
 
-                    # Wiedergabe fortsetzen, wenn wir unterbrochen haben
+                    # Wiedergabe fortsetzen, wenn wir unterbrochen haben (TODO: Ich glaube hierhin sollte man noch schauen)
                     if current_position < len(self._playback_sequence):
                         self._sonos_device.play_from_queue(current_position)
                         self.logger.debug(
@@ -1037,7 +993,7 @@ class SonosPlayer(AudioPlayer):
             self.logger.error(f"Failed to send start event: {e}")
 
     def _send_complete_event(self):
-        """Sendet das Complete-Event in einem eigenen Thread"""
+        """Sendet das Complete-Event in einem eigenen Thread und räumt alle temporären Dateien auf"""
         try:
             self.logger.debug("Audio playback complete - sending event")
             # Create a new event loop for this thread
@@ -1049,34 +1005,47 @@ class SonosPlayer(AudioPlayer):
 
             # Close the loop
             loop.close()
+            
+            # Alle temporären Dateien aufräumen
+            self._cleanup_all_temp_files()
+            
+            # Datei-Zähler zurücksetzen für die nächste Antwort
+            self._file_counter = 0
+            self.logger.debug("File counter reset to 0 for next response")
+            
         except Exception as e:
             self.logger.error(f"Failed to send complete event: {e}")
 
-    def _cleanup_temp_files(self):
-        """Clean up temporary files in the temp directory"""
+    def _cleanup_all_temp_files(self):
+        """Alle temporären Dateien im Temp-Verzeichnis aufräumen"""
         try:
-            # Nur Dateien löschen, die nicht mehr benötigt werden
+            # Alle Dateien im Temp-Verzeichnis auflisten
             files = [
                 os.path.join(self._temp_dir, f)
                 for f in os.listdir(self._temp_dir)
                 if os.path.isfile(os.path.join(self._temp_dir, f))
             ]
 
-            # Lösche alle Dateien außer den neuesten 5
-            files.sort(key=lambda x: os.path.getctime(x))
-            files_to_delete = files[:-5]  # Behalte die neuesten 5 Dateien
+            # Alle Dateien löschen
+            for file_path in files:
+                try:
+                    os.unlink(file_path)
+                    chunk_name = os.path.basename(file_path)
+                    file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_name}"
+                    if file_url in self._queued_urls:
+                        self._queued_urls.remove(file_url)
+                    self.logger.debug(f"Deleted temporary file: {file_path}")
+                except Exception as e:
+                    self.logger.warning(f"Could not delete file {file_path}: {e}")
 
-            for file_path in files_to_delete:
-                os.unlink(file_path)
-                # Remove from URL tracking if it was there
-                chunk_name = os.path.basename(file_path)
-                file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_name}"
-                if file_url in self._queued_urls:
-                    self._queued_urls.remove(file_url)
-
-            # Reset URL tracking für klarere Sitzungen
-            if len(files_to_delete) > 0:
-                self._queued_urls.clear()
-                self.logger.debug("Temporary files cleaned up and tracking reset")
+            # URL-Tracking zurücksetzen
+            self._queued_urls.clear()
+            
+            # Sequenzierung zurücksetzen
+            self._playback_sequence = []
+            self._playing_position = 0
+            self._expected_next_position = 1
+            
+            self.logger.debug("All temporary files cleaned up and tracking reset")
         except Exception as e:
-            self.logger.warning("Error cleaning up temporary files: %s", e)
+            self.logger.warning(f"Error cleaning up all temporary files: {e}")

@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import traceback
 from enum import Enum, auto
 
 from hueify import GroupsManager, HueBridge
 
-from shared.logging_mixin import LoggingMixin
 from shared.event_bus import EventBus, EventType
+from shared.logging_mixin import LoggingMixin
 
 
 class LightState(Enum):
@@ -59,7 +61,7 @@ class LightController(LoggingMixin):
         self.event_bus = None
 
     @classmethod
-    async def create(cls, room_identifier="Zimmer 1") -> "LightController":
+    async def create(cls, room_identifier="Zimmer 1") -> LightController:
         """
         Asynchronous factory method to create and initialize a LightController.
 
@@ -81,7 +83,7 @@ class LightController(LoggingMixin):
         instance.logger.info("Light Controller initialized")
         return instance
 
-    async def _initialize_hue(self):
+    async def _initialize_hue(self) -> None:
         """Initializes the connection to the Hue Bridge."""
         try:
             self.bridge = HueBridge.connect_by_ip()
@@ -106,7 +108,7 @@ class LightController(LoggingMixin):
             self.group_manager = None
             self.room_controller = None
 
-    async def _save_idle_state(self):
+    async def _save_idle_state(self) -> None:
         """Saves the current state as idle state."""
         if not self.room_controller:
             return
@@ -159,7 +161,7 @@ class LightController(LoggingMixin):
             self.current_state = LightState.ALERT
             self.logger.info("LIGHT: Switching to ALERT mode (user speaking)")
 
-    def on_assistant_started_responding(self):
+    def on_assistant_started_responding(self) -> None:
         """
         Slightly dims the lights when assistant starts responding.
         """
@@ -167,7 +169,7 @@ class LightController(LoggingMixin):
         self.current_state = LightState.ASSISTANT_RESPONDING
         self.logger.info("LIGHT: Switching to ASSISTANT_RESPONDING mode")
 
-    def on_system_idle(self):
+    def on_system_idle(self) -> None:
         """
         Restores lights to original state when system becomes idle.
         """
@@ -175,7 +177,7 @@ class LightController(LoggingMixin):
         self.current_state = LightState.IDLE
         self.logger.info("LIGHT: Switching to IDLE mode")
 
-    async def increase_brightness(self):
+    async def increase_brightness(self) -> None:
         """Increases brightness for wake word or user speaking states."""
         if not self.room_controller:
             return
@@ -202,7 +204,7 @@ class LightController(LoggingMixin):
             )
             self.logger.error(error_details)
 
-    async def decrease_brightness(self):
+    async def decrease_brightness(self) -> None:
         """Slightly decreases brightness when assistant is responding."""
         if not self.room_controller:
             return
@@ -224,7 +226,7 @@ class LightController(LoggingMixin):
             )
             self.logger.error(error_details)
 
-    async def restore_idle_state(self):
+    async def restore_idle_state(self) -> None:
         """Restores lights to the saved idle state."""
         if not self.room_controller or not self.idle_state_id:
             return
@@ -239,6 +241,6 @@ class LightController(LoggingMixin):
             error_details = f"Error restoring idle state: {e}\n{traceback.format_exc()}"
             self.logger.error(error_details)
 
-    def _seconds_to_transition_time(self, seconds):
+    def _seconds_to_transition_time(self, seconds) -> int:
         """Converts seconds to Hue API 100ms units."""
         return max(1, round(seconds * 10))

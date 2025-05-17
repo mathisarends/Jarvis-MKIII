@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-from notionary import BlockElementRegistryBuilder, NotionPageFactory
+
+from notionary import NotionPage
 
 
 class ClipboardPage:
@@ -11,9 +12,9 @@ class ClipboardPage:
 
     async def initialize(self):
         """Initialize the Notion page."""
-        self.page = await NotionPageFactory.from_page_name("Jarvis Clipboard")
+        self.page = await NotionPage.from_page_name("Jarvis Clipboard")
         self.page.block_registry = (
-            BlockElementRegistryBuilder()
+            self.page.block_registry_builder
             .with_headings()
             .with_callouts()
             .with_paragraphs()
@@ -53,4 +54,4 @@ class ClipboardPage:
         if not self.page:
             raise ValueError("Page not initialized. Call initialize() first.")
 
-        return self.page.block_registry.generate_llm_prompt()
+        return self.page.block_registry.get_notion_markdown_syntax_prompt()

@@ -301,7 +301,7 @@ class EventRouter(LoggingMixin):
         if self.vad_enabled:
             return
 
-        delay_seconds = 1.0
+        delay_seconds = 1.25 # TODO: Herausfinden, warum ich diese Logik hier brauche, das verstehe ich leider nicht so ganz.
         await asyncio.sleep(delay_seconds)
 
         self.logger.info("Executing delayed VAD re-enable")
