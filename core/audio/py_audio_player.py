@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import queue
@@ -13,13 +14,15 @@ from typing_extensions import override
 from core.audio.audio_player_base import AudioPlayer
 from resources.config import CHANNELS, CHUNK, FORMAT, RATE
 from shared.event_bus import EventBus, EventType
+from shared.logging_mixin import LoggingMixin
 
 
-class PyAudioPlayer(AudioPlayer):
+class PyAudioPlayer(AudioPlayer, LoggingMixin):
     """PyAudio implementation of the AudioPlayerBase class with sound file playback"""
 
     @override
     def __init__(self):
+        super().__init__()
         self.p = pyaudio.PyAudio()
         self.stream = None
         self.audio_queue = queue.Queue()
@@ -28,8 +31,12 @@ class PyAudioPlayer(AudioPlayer):
         self.current_audio_data = bytes()
         self.volume = 1.0
         self.is_busy = False
+        self.last_state_change = time.time()
+        self.min_state_change_interval = 0.5
         self.event_bus = EventBus()
         self.stream_lock = threading.Lock()
+        self.state_lock = threading.Lock()
+        self.sounds_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "resources", "sounds")
 
     @override
     def start(self):
@@ -73,11 +80,13 @@ class PyAudioPlayer(AudioPlayer):
                     )
                     self._recreate_audio_stream()
 
-        # Sofort Status zurücksetzen
-        if self.is_busy:
-            self.is_busy = False
-            self.current_audio_data = bytes()
-            self._safely_notify_playback_completed()
+        # Sofort Status zurücksetzen mit Mutex-Schutz
+        with self.state_lock:
+            if self.is_busy:
+                self.is_busy = False
+                self.current_audio_data = bytes()
+                self.last_state_change = time.time()
+                threading.Thread(target=self._send_complete_event).start()
 
         self.logger.info("Audio queue cleared, stream kept alive.")
 
@@ -227,14 +236,20 @@ class PyAudioPlayer(AudioPlayer):
         if not chunk:
             return
 
-        was_busy = self.is_busy
-        self.is_busy = True
-
-        if not was_busy:
-            self.event_bus.publish_async_from_thread(
-                EventType.ASSISTANT_STARTED_RESPONDING
-            )
-            self.logger.debug("Audio playback started")
+        # Zustandsänderung mit Lock schützen
+        with self.state_lock:
+            current_time = time.time()
+            was_busy = self.is_busy
+            self.is_busy = True
+            
+            # Nur ein Event senden, wenn wir gerade erst angefangen haben zu spielen
+            # UND eine Mindestzeit seit dem letzten Event vergangen ist
+            if not was_busy and (current_time - self.last_state_change) >= self.min_state_change_interval:
+                self.last_state_change = current_time
+                # Event in einem separaten Thread senden
+                threading.Thread(
+                    target=self._send_start_event
+                ).start()
 
         adjusted_chunk = self._adjust_volume(chunk)
         self.current_audio_data = adjusted_chunk
@@ -258,10 +273,20 @@ class PyAudioPlayer(AudioPlayer):
 
     def _check_queue_state(self):
         """Check the queue state and notify if playback is completed"""
-        if self.audio_queue.empty() and self.is_busy:
-            self.is_busy = False
-            self.current_audio_data = bytes()
-            self._safely_notify_playback_completed()
+        # Nur ein Event senden, wenn eine Zustandsänderung stattfindet und eine Mindestzeit vergangen ist
+        with self.state_lock:
+            if self.audio_queue.empty() and self.is_busy:
+                current_time = time.time()
+                
+                # Prüfen, ob genug Zeit seit dem letzten Event vergangen ist
+                if (current_time - self.last_state_change) >= self.min_state_change_interval:
+                    self.is_busy = False
+                    self.current_audio_data = bytes()
+                    self.last_state_change = current_time
+                    # Event in einem separaten Thread senden
+                    threading.Thread(
+                        target=self._send_complete_event
+                    ).start()
 
     def _handle_playback_error(self, error):
         """Handle any errors during playback"""
@@ -273,12 +298,11 @@ class PyAudioPlayer(AudioPlayer):
         # Versuche den Stream neu zu erstellen, wenn ein Fehler auftritt
         self._recreate_audio_stream()
 
-        if self.is_busy:
-            self.is_busy = False
-            try:
-                self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-            except Exception as e:
-                self.logger.error("Failed to publish playback complete event: %s", e)
+        with self.state_lock:
+            if self.is_busy:
+                self.is_busy = False
+                self.last_state_change = time.time()
+                threading.Thread(target=self._send_complete_event).start()
 
     def _adjust_volume(self, audio_chunk):
         """Adjust the volume of an audio chunk"""
@@ -299,17 +323,39 @@ class PyAudioPlayer(AudioPlayer):
             sound_name += ".mp3"
         return os.path.join(self.sounds_dir, sound_name)
 
+    def _send_start_event(self):
+        """Sendet das Start-Event in einem eigenen Thread"""
+        try:
+            self.logger.debug("Audio playback started - sending event")
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Fire the event synchronously to avoid event loop issues
+            self.event_bus.publish(EventType.ASSISTANT_STARTED_RESPONDING)
+            
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            self.logger.error(f"Failed to send start event: {e}")
+    
+    def _send_complete_event(self):
+        """Sendet das Complete-Event in einem eigenen Thread"""
+        try:
+            self.logger.debug("Audio playback complete - sending event")
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Fire the event synchronously to avoid event loop issues
+            self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
+            
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            self.logger.error(f"Failed to send complete event: {e}")
+    
+    # Alte Funktion durch neue Implementierung ersetzen
     def _safely_notify_playback_completed(self):
         """Send playback completed event in a thread-safe way"""
-        try:
-            self.event_bus.publish_async_from_thread(
-                EventType.ASSISTANT_COMPLETED_RESPONDING
-            )
-            self.logger.debug("Audio playback stopped (event sent)")
-        except Exception as e:
-            self.logger.warning("Failed to send event from thread: %s", e)
-            try:
-                self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-                self.logger.debug("Audio playback stopped (event sent via fallback)")
-            except Exception as e2:
-                self.logger.error("Failed to send event via fallback: %s", e2)
+        threading.Thread(target=self._send_complete_event).start()

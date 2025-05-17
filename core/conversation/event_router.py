@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from functools import cached_property
 from typing import Any, Dict, List
 
@@ -275,25 +276,47 @@ class EventRouter(LoggingMixin):
 
     def enable_vad_wrapper(self, data=None):
         print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
-        asyncio.create_task(self._enable_vad())
+        
+        threading.Thread(target=self._run_enable_vad_in_thread).start()
+        
+    def enable_vad_wrapper(self, data=None):
+        print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
+        
+        threading.Thread(target=self._run_enable_vad_in_thread).start()
+        
+    def _run_enable_vad_in_thread(self):
+        """Führt _enable_vad in einem separaten Thread aus"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            loop.run_until_complete(self._enable_vad())
+            loop.close()
+        except Exception as e:
+            print(f"[VAD] ERROR: Failed to enable VAD in thread: {e}")
+            self.logger.error(f"Failed to enable VAD in thread: {e}")
 
     async def _enable_vad(self) -> None:
         """
-        Re-enable VAD when the assistant stops speaking.
+        Re-enable VAD when the assistant stops speaking, with delay.
         """
         if self.vad_enabled:
             return
 
-        print("[VAD] Re-enabling VAD - assistant stopped speaking")
-        self.logger.debug("Assistant stopped speaking - re-enabling VAD")
+        print("[VAD] Scheduling VAD re-enable with delay...")
+        self.logger.debug("Assistant stopped speaking - scheduling VAD re-enablement")
+        
+        delay_seconds = 1.0
+        await asyncio.sleep(delay_seconds)
 
-        # Create a session update to re-enable original VAD settings
+        print("[VAD] Re-enabling VAD after delay")
+        self.logger.debug("Executing delayed VAD re-enable")
+
         session_update = {
             "type": "session.update",
             "session": {"turn_detection": {"type": "server_vad"}},
         }
 
-        # Send the session update via WebSocket
         try:
             await self.ws_manager.send_message(session_update)
             self.vad_enabled = True

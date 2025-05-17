@@ -1,34 +1,25 @@
 import asyncio
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
-from resources.config import (
-    OPENAI_WEBSOCKET_URL,
-    OPENAI_HEADERS,
-    SYSTEM_MESSAGE,
-    TEMPERATURE,
-    TRANSCRIPTION_MODEL,
-    VOICE,
-)
-from core.conversation.conversation_session_manager import ConversationSessionManager
-from core.conversation.realtime_tool_handler import RealtimeToolHandler
-from core.audio.response_audio_handler import ResponseAudioHandler
-from core.websocket.websocket_manager import WebSocketManager
-from core.conversation.event_router import EventRouter
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.microphone import PyAudioMicrophone
+from core.audio.response_audio_handler import ResponseAudioHandler
+from core.conversation.conversation_session_manager import \
+    ConversationSessionManager
+from core.conversation.event_router import EventRouter
+from core.conversation.realtime_tool_handler import RealtimeToolHandler
+from core.websocket.websocket_manager import WebSocketManager
+from plugins.notion.clipboard.clipboard_tool import clipboard_tool
 from plugins.stop_conversation_tool import stop_conversation_tool
-from plugins.pomodoro.pomodoro_tool import (
-    pomodoro_tool,
-)
+from plugins.tool_registry import ToolRegistry
+from plugins.volume_tool import get_volume_tool, set_volume_tool
 from plugins.weather.weather_tool import get_weather
 from plugins.web_search_tool import web_search_tool
-from plugins.volume_tool import set_volume_tool, get_volume_tool
-from plugins.notion.clipboard.clipboard_tool import clipboard_tool
-
-from plugins.tool_registry import ToolRegistry
-
-from shared.logging_mixin import LoggingMixin
+from resources.config import (OPENAI_HEADERS, OPENAI_WEBSOCKET_URL,
+                              SYSTEM_MESSAGE, TEMPERATURE, TRANSCRIPTION_MODEL,
+                              VOICE)
 from shared.event_bus import EventBus
+from shared.logging_mixin import LoggingMixin
 
 
 class OpenAIRealtimeAPI(LoggingMixin):
