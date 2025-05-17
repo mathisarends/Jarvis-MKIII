@@ -276,20 +276,20 @@ class EventRouter(LoggingMixin):
 
     def enable_vad_wrapper(self, data=None):
         print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
-        
+
         threading.Thread(target=self._run_enable_vad_in_thread).start()
-        
+
     def enable_vad_wrapper(self, data=None):
         print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
-        
+
         threading.Thread(target=self._run_enable_vad_in_thread).start()
-        
+
     def _run_enable_vad_in_thread(self):
         """Führt _enable_vad in einem separaten Thread aus"""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             loop.run_until_complete(self._enable_vad())
             loop.close()
         except Exception as e:
@@ -305,7 +305,7 @@ class EventRouter(LoggingMixin):
 
         print("[VAD] Scheduling VAD re-enable with delay...")
         self.logger.debug("Assistant stopped speaking - scheduling VAD re-enablement")
-        
+
         delay_seconds = 1.0
         await asyncio.sleep(delay_seconds)
 

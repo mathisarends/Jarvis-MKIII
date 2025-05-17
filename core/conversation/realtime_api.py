@@ -16,8 +16,7 @@ from plugins.volume_tool import get_volume_tool, set_volume_tool
 from plugins.weather.weather_tool import get_weather
 from plugins.web_search_tool import web_search_tool
 from resources.config import (OPENAI_HEADERS, OPENAI_WEBSOCKET_URL,
-                              SYSTEM_MESSAGE, TEMPERATURE, TRANSCRIPTION_MODEL,
-                              VOICE)
+                              SYSTEM_MESSAGE, TEMPERATURE, VOICE)
 from shared.event_bus import EventBus
 from shared.logging_mixin import LoggingMixin
 
@@ -36,7 +35,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
         self.system_message = SYSTEM_MESSAGE
         self.voice = VOICE
         self.temperature = TEMPERATURE
-        self.transcription_model = TRANSCRIPTION_MODEL
 
         self.event_bus = EventBus()
         self.tool_registry = ToolRegistry.get_instance()
@@ -60,7 +58,6 @@ class OpenAIRealtimeAPI(LoggingMixin):
             self.system_message,
             self.voice,
             self.temperature,
-            self.transcription_model,
         )
 
     # TODO: Registry hier optinal mit dem Pomodoro-Timer verknü

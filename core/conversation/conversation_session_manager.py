@@ -16,13 +16,11 @@ class ConversationSessionManager(LoggingMixin):
         system_message: str,
         voice: str,
         temperature: float,
-        transcription_model: str,
     ):
         self.ws_manager = ws_manager
         self.system_message = system_message
         self.voice = voice
         self.temperature = temperature
-        self.transcription_model = transcription_model
         self.logger.info("SessionManager initialized")
 
     def build_session_config(self, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -40,10 +38,6 @@ class ConversationSessionManager(LoggingMixin):
                 "modalities": ["text", "audio"],
                 "temperature": self.temperature,
                 "tools": tools,
-                "input_audio_transcription": {
-                    "model": self.transcription_model,
-                    "prompt": "Die Spracheingabe erfolgt hauptsächlich auf Deutsch, enthält jedoch häufig englische Fachbegriffe aus dem Bereich der Programmierung. Bitte transkribiere entsprechend.",
-                },
             },
         }
 

@@ -36,7 +36,11 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.event_bus = EventBus()
         self.stream_lock = threading.Lock()
         self.state_lock = threading.Lock()
-        self.sounds_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "resources", "sounds")
+        self.sounds_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "resources",
+            "sounds",
+        )
 
     @override
     def start(self):
@@ -241,15 +245,17 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             current_time = time.time()
             was_busy = self.is_busy
             self.is_busy = True
-            
+
             # Nur ein Event senden, wenn wir gerade erst angefangen haben zu spielen
             # UND eine Mindestzeit seit dem letzten Event vergangen ist
-            if not was_busy and (current_time - self.last_state_change) >= self.min_state_change_interval:
+            if (
+                not was_busy
+                and (current_time - self.last_state_change)
+                >= self.min_state_change_interval
+            ):
                 self.last_state_change = current_time
                 # Event in einem separaten Thread senden
-                threading.Thread(
-                    target=self._send_start_event
-                ).start()
+                threading.Thread(target=self._send_start_event).start()
 
         adjusted_chunk = self._adjust_volume(chunk)
         self.current_audio_data = adjusted_chunk
@@ -264,9 +270,6 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         except OSError as e:
             self.logger.error("Stream write error: %s", e)
             self._recreate_audio_stream()
-
-            if self.is_playing:
-                self.audio_queue.put(chunk)
         except Exception as e:
             self.logger.error("Unexpected error in stream write: %s", e)
             self._recreate_audio_stream()
@@ -277,16 +280,16 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         with self.state_lock:
             if self.audio_queue.empty() and self.is_busy:
                 current_time = time.time()
-                
+
                 # Prüfen, ob genug Zeit seit dem letzten Event vergangen ist
-                if (current_time - self.last_state_change) >= self.min_state_change_interval:
+                if (
+                    current_time - self.last_state_change
+                ) >= self.min_state_change_interval:
                     self.is_busy = False
                     self.current_audio_data = bytes()
                     self.last_state_change = current_time
                     # Event in einem separaten Thread senden
-                    threading.Thread(
-                        target=self._send_complete_event
-                    ).start()
+                    threading.Thread(target=self._send_complete_event).start()
 
     def _handle_playback_error(self, error):
         """Handle any errors during playback"""
@@ -330,15 +333,15 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             # Create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             # Fire the event synchronously to avoid event loop issues
             self.event_bus.publish(EventType.ASSISTANT_STARTED_RESPONDING)
-            
+
             # Close the loop
             loop.close()
         except Exception as e:
             self.logger.error(f"Failed to send start event: {e}")
-    
+
     def _send_complete_event(self):
         """Sendet das Complete-Event in einem eigenen Thread"""
         try:
@@ -346,15 +349,15 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
             # Create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             # Fire the event synchronously to avoid event loop issues
             self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-            
+
             # Close the loop
             loop.close()
         except Exception as e:
             self.logger.error(f"Failed to send complete event: {e}")
-    
+
     # Alte Funktion durch neue Implementierung ersetzen
     def _safely_notify_playback_completed(self):
         """Send playback completed event in a thread-safe way"""
