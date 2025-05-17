@@ -172,7 +172,7 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
 
         except Exception as e:
             self.logger.error("Error playing sound %s: %s", sound_name, e)
-            return False        
+            return False
 
     def _recreate_audio_stream(self):
         """Recreate the audio stream if there was an error"""

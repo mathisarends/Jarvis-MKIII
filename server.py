@@ -4,10 +4,12 @@ from fastapi import FastAPI
 # Create a FastAPI application
 app = FastAPI()
 
+
 # Define a route for the root URL
 @app.get("/")
 def hello_world():
     return "Hello, World!"
+
 
 # Run the application if this script is executed directly
 if __name__ == "__main__":

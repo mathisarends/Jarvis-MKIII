@@ -14,8 +14,7 @@ class ClipboardPage:
         """Initialize the Notion page."""
         self.page = await NotionPage.from_page_name("Jarvis Clipboard")
         self.page.block_registry = (
-            self.page.block_registry_builder
-            .with_headings()
+            self.page.block_registry_builder.with_headings()
             .with_callouts()
             .with_paragraphs()
             .with_numbered_list()

@@ -23,16 +23,16 @@ from shared.singleton_meta_class import SingletonMetaClass
 
 class CustomHandler(SimpleHTTPRequestHandler):
     """HTTP-Handler für das Sonos-System - ohne Deduplizierung"""
-    
+
     def log_message(self, format, *args):
         # Suppress HTTP request logs for cleaner output
         pass
 
     rbufsize = 64 * 1024
-    
+
     # Cache für Anfragen-Logging (nur für Logging, nicht für Deduplizierung)
     _request_cache = {}
-    
+
     # Audio-Chunk-Pattern für Erkennung (nur für Logging-Zwecke)
     _audio_chunk_pattern = re.compile(r"/resources/sounds/temp/audio_chunk_\d+\.mp3$")
 
@@ -52,13 +52,15 @@ class CustomHandler(SimpleHTTPRequestHandler):
         path_key = f"get_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
-        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
+
+        if (
+            current_time - last_time < 5
+        ):  # Wiederholte Anfrage in den letzten 5 Sekunden
             print(f"↩️ Repeat GET request for: {self.path}")
         else:
             print(f"🔍 HTTP GET Request for: {self.path}")
             self._request_cache[path_key] = current_time
-        
+
         return super().do_GET()
 
     def do_HEAD(self):
@@ -66,13 +68,13 @@ class CustomHandler(SimpleHTTPRequestHandler):
         path_key = f"head_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
+
         if current_time - last_time < 5:
             print(f"↩️ Repeat HEAD request for: {self.path}")
         else:
             print(f"🔍 HTTP HEAD Request for: {self.path}")
             self._request_cache[path_key] = current_time
-            
+
         return super().do_HEAD()
 
     def end_headers(self):
@@ -81,22 +83,22 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=60")
         else:
             self.send_header("Cache-Control", "public, max-age=300")
-        
+
         # ETag für effizientes Caching
         file_path = self.translate_path(self.path)
         if os.path.exists(file_path):
             stat_result = os.stat(file_path)
             etag = f'"{stat_result.st_mtime}_{stat_result.st_size}"'
             self.send_header("ETag", etag)
-            
+
             # Last-Modified für HTTP-Caching
             last_modified = self.date_time_string(int(stat_result.st_mtime))
             self.send_header("Last-Modified", last_modified)
-        
+
         # Wichtige Header für Audio-Streaming
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Connection", "keep-alive")
-        
+
         super().end_headers()
 
     def guess_type(self, path):
@@ -111,24 +113,25 @@ class CustomHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         """Overridden to ensure proper file serving with optimized logging."""
         translated_path = super().translate_path(path)
-        
+
         path_key = f"path_{path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
+
         if current_time - last_time < 5:
             if not os.path.exists(translated_path):
                 print(f"❌ File still NOT found: {translated_path}")
             return translated_path
-            
+
         self._request_cache[path_key] = current_time
-        
+
         if os.path.exists(translated_path):
             print(f"✅ File exists: {translated_path}")
         else:
             print(f"❌ File NOT found: {translated_path}")
-                
+
         return translated_path
+
 
 class SonosHTTPServer(metaclass=SingletonMetaClass):
     """Simple HTTP server to serve audio files for Sonos with singleton pattern."""
@@ -751,7 +754,7 @@ class SonosPlayer(AudioPlayer):
 
             # Kurze Verzögerung einbauen, um sicherzustellen, dass der erste Chunk vollständig geladen ist
             self.logger.debug("Waiting for first audio chunk to be fully indexed...")
-            
+
             # Start playing the queue
             self._sonos_device.play_from_queue(0)
 
@@ -963,17 +966,17 @@ class SonosPlayer(AudioPlayer):
         """Sendet das Complete-Event in einem eigenen Thread und räumt alle temporären Dateien auf"""
         try:
             self.logger.debug("Audio playback complete - sending event")
-            
+
             self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-            
+
             self.logger.debug("Waiting 1 second before cleaning up files...")
             time.sleep(1)
-            
+
             self._cleanup_all_temp_files()
-            
+
             self._file_counter = 0
             self.logger.debug("File counter reset to 0 for next response")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to send complete event: {e}")
 
@@ -1001,12 +1004,12 @@ class SonosPlayer(AudioPlayer):
 
             # URL-Tracking zurücksetzen
             self._queued_urls.clear()
-            
+
             # Sequenzierung zurücksetzen
             self._playback_sequence = []
             self._playing_position = 0
             self._expected_next_position = 1
-            
+
             self.logger.debug("All temporary files cleaned up and tracking reset")
         except Exception as e:
             self.logger.warning(f"Error cleaning up all temporary files: {e}")
