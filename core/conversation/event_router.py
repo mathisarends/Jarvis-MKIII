@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import threading
 import time
@@ -24,7 +26,7 @@ class DoneMessage(LoggingMixin):
         self.raw_response = response_data
 
     @classmethod
-    def from_json(cls, json_data: Dict[str, Any]) -> "DoneMessage":
+    def from_json(cls, json_data: Dict[str, Any]) -> DoneMessage:
         """
         Create a DoneMessage instance from JSON data.
         """
@@ -231,14 +233,6 @@ class EventRouter(LoggingMixin):
 
     async def _handle_speech_started(self) -> None:
         """Processes speech_started events with protection against false triggers"""
-        min_time_after_vad_enable = 0.5
-        current_time = time.time()
-        last_vad_time = self.last_vad_enable_time
-        
-        if current_time - last_vad_time < min_time_after_vad_enable:
-            self.logger.warning("Ignoring speech_started event - too soon after VAD enable")
-            return
-            
         self.logger.info("User speech input started")
 
         self.audio_handler.stop_playback()
@@ -282,11 +276,6 @@ class EventRouter(LoggingMixin):
         except Exception as e:
             print(f"[VAD] ERROR: Failed to disable VAD: {e}")
             self.logger.error(f"Failed to disable VAD: {e}")
-
-    def enable_vad_wrapper(self, data=None):
-        print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
-
-        threading.Thread(target=self._run_enable_vad_in_thread).start()
 
     def enable_vad_wrapper(self, data=None):
         print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")

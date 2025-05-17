@@ -242,6 +242,12 @@ class SonosPlayer(AudioPlayer):
         self._queued_urls = set()  # Set to track URLs already in the queue
         self._needs_queue_reset = False  # Flag zur Steuerung von Queue-Resets
 
+        # Neue Attribute für sequentielle Wiedergabe
+        self._expected_next_position = 1  # Position, die als nächstes gespielt werden sollte
+        self._queue_management_lock = threading.Lock()  # Lock für Warteschlangenoperationen
+        self._playback_sequence = []  # Liste zur Verfolgung der Wiedergabereihenfolge
+        self._playing_position = 0  # Aktuelle Wiedergabeposition
+
         # Create directories for sounds and temp files within the project structure
         if project_dir:
             self.project_dir = Path(project_dir)
@@ -359,6 +365,11 @@ class SonosPlayer(AudioPlayer):
                 self._queued_urls.clear()
                 self._needs_queue_reset = False
                 self._queue_initialized = False
+                
+                # Reset sequence tracking
+                self._playback_sequence = []
+                self._playing_position = 0
+                self._expected_next_position = 1
 
             except Exception as e:
                 self.logger.warning("Could not clear Sonos queue: %s", e)
@@ -413,6 +424,10 @@ class SonosPlayer(AudioPlayer):
                     self._sonos_device.clear_queue()
                     # URL-Tracking zurücksetzen
                     self._queued_urls.clear()
+                    # Sequenz-Tracking zurücksetzen
+                    self._playback_sequence = []
+                    self._playing_position = 0
+                    self._expected_next_position = 1
                     # Queue-Reset für die nächste Antwort aktivieren
                     self._needs_queue_reset = True
                 except Exception as e:
@@ -632,7 +647,7 @@ class SonosPlayer(AudioPlayer):
                 time.sleep(0.5)
 
     def _process_and_queue_audio(self, audio_chunk):
-        """Process an audio chunk, convert it to MP3, and add it to the Sonos queue with deduplication."""
+        """Process an audio chunk, convert it to MP3, and add it to the Sonos queue with sequence control."""
         if not self._sonos_device:
             self.logger.warning("No Sonos device connected, audio chunk ignored")
             return
@@ -649,9 +664,8 @@ class SonosPlayer(AudioPlayer):
                 if not was_busy and (current_time - self.last_state_change) >= self.min_state_change_interval:
                     self.last_state_change = current_time
                     # Event in einem separaten Thread senden
-                    threading.Thread(
-                        target=self._send_start_event
-                    ).start()
+                    threading.Thread(target=self._send_start_event).start()
+                    
                     # Wenn wir wieder anfangen zu sprechen und ein Reset benötigt wird, setze dies zurück
                     if self._needs_queue_reset:
                         self._sonos_device.stop()
@@ -659,6 +673,12 @@ class SonosPlayer(AudioPlayer):
                         self._queued_urls.clear()
                         self._needs_queue_reset = False
                         self._queue_initialized = False
+                        
+                        # Sequenzierung zurücksetzen
+                        self._playback_sequence = []
+                        self._playing_position = 0
+                        self._expected_next_position = 1
+                        
                         self.logger.debug("Queue reset at start of new response")
 
             # Create a unique filename for this chunk
@@ -755,10 +775,16 @@ class SonosPlayer(AudioPlayer):
             # Initialize queue if needed
             if not self._queue_initialized:
                 self._initialize_sonos_queue(file_url)
+                # Sequenzierung initialisieren
+                with self._queue_management_lock:
+                    self._playback_sequence = [file_url]
+                    self._playing_position = 0
                 return
 
-            # Add to Sonos queue
-            position = self._add_to_sonos_queue(file_url)
+            # Add to Sonos queue with sequence control
+            with self._queue_management_lock:
+                position = self._add_to_sonos_queue_in_sequence(file_url)
+                
             if position > 0:
                 self.logger.debug(
                     "Added MP3 audio to Sonos queue at position %d: %s", position, file_url
@@ -780,7 +806,7 @@ class SonosPlayer(AudioPlayer):
             self._queued_urls.clear()
 
             # Add the first audio file to the queue
-            position = self._add_to_sonos_queue(first_audio_url)
+            position = self._add_to_sonos_queue_in_sequence(first_audio_url)
 
             # Start playing the queue
             self._sonos_device.play_from_queue(0)
@@ -793,13 +819,30 @@ class SonosPlayer(AudioPlayer):
         except Exception as e:
             self.logger.error("Error initializing Sonos queue: %s", e)
 
-    def _add_to_sonos_queue(self, audio_url):
-        """Add an audio file to the Sonos queue and return its position with deduplication."""
+    def _add_to_sonos_queue_in_sequence(self, audio_url):
+        """Add an audio file to the Sonos queue in the correct sequence."""
         try:
             # Überprüfen, ob diese URL bereits in der Queue ist
             if audio_url in self._queued_urls:
                 self.logger.debug(f"Skipping duplicate URL in queue: {audio_url}")
                 return -1  # Skip duplicates
+                
+            # Sequenznummer aus der URL extrahieren
+            try:
+                # Extrahiere Nummer aus "audio_chunk_X.mp3"
+                file_name = audio_url.split('/')[-1]
+                chunk_num = int(file_name.split('_')[2].split('.')[0])
+                
+                # In chronologischer Reihenfolge zur Sequenz hinzufügen
+                self._playback_sequence.append(audio_url)
+                
+                # Sortieren der _playback_sequence nach Chunk-Nummer
+                self._playback_sequence.sort(key=lambda url: int(url.split('/')[-1].split('_')[2].split('.')[0]))
+                
+                self.logger.debug(f"Current sequence: {[url.split('/')[-1] for url in self._playback_sequence]}")
+            except Exception as e:
+                self.logger.warning(f"Failed to extract sequence number: {e}, adding to end")
+                self._playback_sequence.append(audio_url)
                 
             # Bei einer neuen Gesprächsrunde die Queue komplett leeren
             if self._needs_queue_reset:
@@ -808,25 +851,66 @@ class SonosPlayer(AudioPlayer):
                 self._queued_urls.clear()
                 self._needs_queue_reset = False
                 self.logger.debug("Queue reset for new conversation")
-                
-            # Add to Sonos queue
-            position = self._sonos_device.add_uri_to_queue(audio_url)
             
-            # Track this URL
-            self._queued_urls.add(audio_url)
+            # Sonos-Warteschlange neu aufbauen um richtige Reihenfolge zu garantieren
+            if len(self._playback_sequence) > 1:
+                position_in_list = self._playback_sequence.index(audio_url)
+                
+                # Wenn dieses Audio-Chunk nicht das nächste in der Sequenz ist,
+                # organisieren wir die gesamte Queue neu um die korrekte Reihenfolge wiederherzustellen
+                if position_in_list != len(self._playback_sequence) - 1:
+                    # Warte kurz mit dem Hinzufügen, bis die Datei vollständig geschrieben ist
+                    time.sleep(0.1)
+                    
+                    # Aktuelle Wiedergabeposition merken
+                    try:
+                        current_position = int(self._sonos_device.get_current_track_info().get("playlist_position", 1)) - 1
+                        if current_position < 0:
+                            current_position = 0
+                    except:
+                        current_position = 0
+                    
+                    # Leere die bestehende Queue
+                    self._sonos_device.stop()
+                    self._sonos_device.clear_queue()
+                    self._queued_urls.clear()
+                    
+                    # Füge alle Dateien in der sortierten Reihenfolge hinzu
+                    for idx, url in enumerate(self._playback_sequence):
+                        pos = self._sonos_device.add_uri_to_queue(url)
+                        self._queued_urls.add(url)
+                        self.logger.debug(f"Re-added {url.split('/')[-1]} at position {pos}")
+                    
+                    # Wiedergabe fortsetzen, wenn wir unterbrochen haben
+                    if current_position < len(self._playback_sequence):
+                        self._sonos_device.play_from_queue(current_position)
+                        self.logger.debug(f"Resumed playback from position {current_position}")
+                    else:
+                        self._sonos_device.play_from_queue(0)
+                    
+                    return len(self._playback_sequence)
+                else:
+                    # Normaler Ablauf: Einfach das Element ans Ende der Queue anhängen
+                    position = self._sonos_device.add_uri_to_queue(audio_url)
+                    # URL tracken
+                    self._queued_urls.add(audio_url)
+            else:
+                # Erster Eintrag in der Liste
+                position = self._sonos_device.add_uri_to_queue(audio_url)
+                self._queued_urls.add(audio_url)
 
-            # If this is the first track and we're not playing, start playing
+            # Starte Wiedergabe, wenn wir noch nicht spielen
             transport_info = self._sonos_device.get_current_transport_info()
             if transport_info["current_transport_state"] != "PLAYING":
                 self._sonos_device.play()
 
             return position
         except Exception as e:
-            self.logger.error("Error adding to Sonos queue: %s", e)
+            self.logger.error(f"Error adding to Sonos queue in sequence: {e}")
             return -1
 
     def _check_playback_status(self):
-        """Check Sonos playback status and clean up when done."""
+        """Check Sonos playback status and ensure sequential playback."""
         if not self._sonos_device:
             return
 
@@ -848,6 +932,21 @@ class SonosPlayer(AudioPlayer):
                 queue_size,
                 queue_size,
             )
+            
+            # Überprüfung, ob Sonos den aktuellen Track übersprungen hat
+            with self._queue_management_lock:
+                if current_position > 0 and self._playing_position > 0:
+                    expected_next = self._playing_position + 1
+                    if current_position != expected_next and current_position != self._playing_position:
+                        self.logger.warning(f"Detected out-of-sequence playback: expected={expected_next}, actual={current_position}")
+                        # Versuche, zur richtigen Position zu springen
+                        if expected_next <= queue_size:
+                            self._sonos_device.play_from_queue(expected_next - 1)  # Sonos verwendet 0-indexiert für play_from_queue
+                            self.logger.debug(f"Corrected playback position to {expected_next}")
+                
+                # Aktuelle Position aktualisieren
+                if current_position > 0:
+                    self._playing_position = current_position
 
             # If we've played all our queued audio and the queue is empty or we're at the end
             # and no more chunks are expected, notify that playback is complete
@@ -869,8 +968,6 @@ class SonosPlayer(AudioPlayer):
                         ).start()
                         # Nächste Antwort sollte mit frischer Queue beginnen
                         self._needs_queue_reset = True
-                        
-                self._cleanup_old_files()
 
         except Exception as e:
             self.logger.error("Error checking playback status: %s", e)
@@ -907,10 +1004,6 @@ class SonosPlayer(AudioPlayer):
         except Exception as e:
             self.logger.error(f"Failed to send complete event: {e}")
 
-    def _safely_notify_playback_completed(self):
-        """Send 'playback completed' event in a thread-safe way"""
-        threading.Thread(target=self._send_complete_event).start()
-
     def _cleanup_temp_files(self):
         """Clean up temporary files in the temp directory"""
         try:
@@ -934,36 +1027,8 @@ class SonosPlayer(AudioPlayer):
                     self._queued_urls.remove(file_url)
 
             # Reset URL tracking für klarere Sitzungen
-            self._queued_urls.clear()
-            self.logger.debug("Temporary files cleaned up and tracking reset")
+            if len(files_to_delete) > 0:
+                self._queued_urls.clear()
+                self.logger.debug("Temporary files cleaned up and tracking reset")
         except Exception as e:
             self.logger.warning("Error cleaning up temporary files: %s", e)
-
-    def _cleanup_old_files(self, keep_latest=5):
-        """Delete older temporary files, keeping only the most recent ones"""
-        try:
-            files = [
-                os.path.join(self._temp_dir, f)
-                for f in os.listdir(self._temp_dir)
-                if os.path.isfile(os.path.join(self._temp_dir, f))
-            ]
-
-            # Sort by creation time
-            files.sort(key=lambda x: os.path.getctime(x))
-
-            # Delete older files, keep the newest
-            files_to_delete = files[:-keep_latest] if len(files) > keep_latest else []
-            for old_file in files_to_delete:
-                os.unlink(old_file)
-                # Remove from URL tracking if it was there
-                chunk_name = os.path.basename(old_file)
-                file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_name}"
-                if file_url in self._queued_urls:
-                    self._queued_urls.remove(file_url)
-
-            if files_to_delete:
-                self.logger.debug(
-                    "%d old temporary files deleted", len(files_to_delete)
-                )
-        except Exception as e:
-            self.logger.warning("Error cleaning up old files: %s", e)
