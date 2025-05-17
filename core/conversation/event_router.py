@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 from functools import cached_property
 from typing import Any, Dict, List
 
@@ -176,6 +177,7 @@ class EventRouter(LoggingMixin):
         self.ws_manager = ws_manager
 
         self.vad_enabled = True
+        self.last_vad_enable_time = 0.0
 
         self.event_bus.subscribe(
             event_type=EventType.ASSISTANT_COMPLETED_RESPONDING,
@@ -228,7 +230,15 @@ class EventRouter(LoggingMixin):
             )
 
     async def _handle_speech_started(self) -> None:
-        """Processes speech_started events"""
+        """Processes speech_started events with protection against false triggers"""
+        min_time_after_vad_enable = 0.5
+        current_time = time.time()
+        last_vad_time = self.last_vad_enable_time
+        
+        if current_time - last_vad_time < min_time_after_vad_enable:
+            self.logger.warning("Ignoring speech_started event - too soon after VAD enable")
+            return
+            
         self.logger.info("User speech input started")
 
         self.audio_handler.stop_playback()
@@ -260,7 +270,6 @@ class EventRouter(LoggingMixin):
         if not self.vad_enabled:
             return
 
-        print("[VAD] Disabling VAD - assistant is speaking")
         self.logger.info("Assistant started speaking - disabling VAD")
 
         try:
@@ -296,32 +305,31 @@ class EventRouter(LoggingMixin):
             print(f"[VAD] ERROR: Failed to enable VAD in thread: {e}")
             self.logger.error(f"Failed to enable VAD in thread: {e}")
 
-    async def _enable_vad(self) -> None:
+    async def _enable_vad(self, data=None) -> None:
         """
-        Re-enable VAD when the assistant stops speaking, with delay.
+        Re-enable VAD when the assistant stops speaking, with delay and protection.
         """
         if self.vad_enabled:
             return
 
-        print("[VAD] Scheduling VAD re-enable with delay...")
-        self.logger.debug("Assistant stopped speaking - scheduling VAD re-enablement")
-
         delay_seconds = 1.0
         await asyncio.sleep(delay_seconds)
+        
+        self.logger.info("Executing delayed VAD re-enable")
 
-        print("[VAD] Re-enabling VAD after delay")
-        self.logger.debug("Executing delayed VAD re-enable")
+        self.last_vad_enable_time = time.time()
 
         session_update = {
             "type": "session.update",
-            "session": {"turn_detection": {"type": "server_vad"}},
+            "session": {
+                "turn_detection": {"type": "server_vad"}
+            }
         }
 
         try:
             await self.ws_manager.send_message(session_update)
             self.vad_enabled = True
-            print("[VAD] VAD re-enabled successfully")
-            self.logger.debug("VAD re-enabled after assistant speech")
+            self.logger.info("VAD re-enabled after assistant speech")
         except Exception as e:
             print(f"[VAD] ERROR: Failed to re-enable VAD: {e}")
             self.logger.error(f"Failed to re-enable VAD: {e}")

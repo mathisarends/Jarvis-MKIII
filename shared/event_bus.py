@@ -125,10 +125,6 @@ class EventBus(metaclass=SingletonMetaClass):
         Thread-safe method to asynchronously publish events.
         Can be called from synchronous contexts.
         """
-        print("PUBLISHING ASYNC FROM THREAD")
-        print("Event Type:", event_type)
-        print("====")
-
         sync_subscribers = [
             cb
             for cb in self._subscribers[event_type]

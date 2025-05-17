@@ -1,4 +1,5 @@
 import array
+import asyncio
 import base64
 import os
 import socket
@@ -14,16 +15,22 @@ from soco import SoCo
 from typing_extensions import override
 
 from core.audio.audio_player_base import AudioPlayer
+from resources.config import RATE
 from shared.event_bus import EventBus, EventType
 from shared.singleton_meta_class import SingletonMetaClass
 
 
 class CustomHandler(SimpleHTTPRequestHandler):
+    """Verbesserter HTTP-Handler mit Caching und Deduplizierung von Anfragen"""
+    
     def log_message(self, format, *args):
         # Suppress HTTP request logs for cleaner output
         pass
 
     rbufsize = 64 * 1024
+    
+    # Cache für HEAD-Anfragen
+    _head_request_cache = {}
 
     def handle(self):
         try:
@@ -32,12 +39,40 @@ class CustomHandler(SimpleHTTPRequestHandler):
             pass
 
     def do_GET(self):
-        print(f"🔍 HTTP GET Request for: {self.path}")
+        """Handle GET requests with optimized logging"""
+        # Optimierte Logging-Strategie: Nur neue oder wichtige Anfragen vollständig loggen
+        path_key = f"get_{self.path}"
+        last_time = self._head_request_cache.get(path_key, 0)
+        current_time = time.time()
+        
+        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
+            print(f"↩️ Repeat GET request for: {self.path}")
+        else:
+            print(f"🔍 HTTP GET Request for: {self.path}")
+            self._head_request_cache[path_key] = current_time
+            
         return super().do_GET()
 
     def do_HEAD(self):
-        print(f"🔍 HTTP HEAD Request for: {self.path}")
+        """Handle HEAD requests with caching to reduce duplicate logs"""
+        path_key = f"head_{self.path}"
+        last_time = self._head_request_cache.get(path_key, 0)
+        current_time = time.time()
+        
+        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
+            print(f"↩️ Repeat HEAD request for: {self.path}")
+        else:
+            print(f"🔍 HTTP HEAD Request for: {self.path}")
+            self._head_request_cache[path_key] = current_time
+            
         return super().do_HEAD()
+
+    def end_headers(self):
+        """Add caching headers to reduce redundant requests"""
+        # Füge Caching-Header hinzu, um wiederholte Anfragen zu reduzieren
+        self.send_header("Cache-Control", "max-age=300")  # 5 Minuten Cache
+        self.send_header("ETag", f"\"{int(time.time())}\"")
+        super().end_headers()
 
     def guess_type(self, path):
         """Overridden method to provide correct MIME types for audio files."""
@@ -49,13 +84,26 @@ class CustomHandler(SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def translate_path(self, path):
-        """Overridden to ensure proper file serving."""
+        """Overridden to ensure proper file serving with optimized logging."""
         translated_path = super().translate_path(path)
-        print(f"🔍 Translating path: {path} -> {translated_path}")
-        if os.path.exists(translated_path):
-            print(f"✅ File exists: {translated_path}")
+        
+        # Optimierte Logging-Strategie
+        path_key = f"path_{path}"
+        last_time = self._head_request_cache.get(path_key, 0)
+        current_time = time.time()
+        
+        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
+            if os.path.exists(translated_path):
+                pass  # Kein Logging für wiederholte Existenz-Checks
+            else:
+                print(f"❌ File still NOT found: {translated_path}")
         else:
-            print(f"❌ File NOT found: {translated_path}")
+            self._head_request_cache[path_key] = current_time
+            if os.path.exists(translated_path):
+                print(f"✅ File exists: {translated_path}")
+            else:
+                print(f"❌ File NOT found: {translated_path}")
+                
         return translated_path
 
 
@@ -185,10 +233,14 @@ class SonosPlayer(AudioPlayer):
         self.is_busy = False
         self.volume = 0.25
         self.event_bus = EventBus()
+        self.last_state_change = time.time()
+        self.min_state_change_interval = 0.5
 
         # Sonos-specific attributes
         self._sonos_device: Optional[SoCo] = None
         self._sonos_devices: List[SoCo] = []
+        self._queued_urls = set()  # Set to track URLs already in the queue
+        self._needs_queue_reset = False  # Flag zur Steuerung von Queue-Resets
 
         # Create directories for sounds and temp files within the project structure
         if project_dir:
@@ -214,6 +266,7 @@ class SonosPlayer(AudioPlayer):
         # Queue management
         self._audio_queue = []
         self._lock = threading.Lock()
+        self._state_lock = threading.Lock()
         self._audio_thread = None
 
         # Sonos-specific queue management
@@ -263,6 +316,9 @@ class SonosPlayer(AudioPlayer):
             self._sonos_device.volume = int(self.volume * 100)
             self.logger.debug("Set Sonos volume to %d%%", int(self.volume * 100))
 
+            # Bereinigen des Temp-Verzeichnisses beim Start
+            self._cleanup_temp_files()
+
             # Save the current queue and state for restoration later
             self._current_playback_session = {
                 "uri": None,
@@ -293,14 +349,15 @@ class SonosPlayer(AudioPlayer):
                 self.logger.warning("Could not save current playback state: %s", e)
 
             # Clear the Sonos queue for our use
-            # We'll create a new queue for our audio chunks
             try:
                 # Prepare device for streaming
                 self._sonos_device.stop()
                 self._sonos_device.clear_queue()
                 self.logger.debug("Cleared Sonos queue")
 
-                # Add a silent placeholder track to initialize queue
+                # Reset queue tracking
+                self._queued_urls.clear()
+                self._needs_queue_reset = False
                 self._queue_initialized = False
 
             except Exception as e:
@@ -352,13 +409,21 @@ class SonosPlayer(AudioPlayer):
             if self._sonos_device and self.is_busy:
                 try:
                     self._sonos_device.stop()
-                    # Optional: clear Sonos queue
-                    # self._sonos_device.clear_queue()
+                    # Sonos-Queue leeren
+                    self._sonos_device.clear_queue()
+                    # URL-Tracking zurücksetzen
+                    self._queued_urls.clear()
+                    # Queue-Reset für die nächste Antwort aktivieren
+                    self._needs_queue_reset = True
                 except Exception as e:
                     self.logger.error("Error stopping Sonos playback: %s", e)
 
-            self.is_busy = False
-            self._safely_notify_playback_completed()
+            # Status zurücksetzen mit Mutex-Schutz
+            with self._state_lock:
+                if self.is_busy:
+                    self.is_busy = False
+                    self.last_state_change = time.time()
+                    threading.Thread(target=self._send_complete_event).start()
 
         self.logger.info("Queue cleared and playback stopped")
         return True
@@ -553,18 +618,8 @@ class SonosPlayer(AudioPlayer):
                         audio_chunk = self._audio_queue.pop(0)
 
                 if audio_chunk:
-                    was_busy = self.is_busy
-                    self.is_busy = True
-
-                    if not was_busy:
-                        self.event_bus.publish_async_from_thread(
-                            EventType.ASSISTANT_STARTED_RESPONDING
-                        )
-                        self.logger.debug("Audio playback started")
-
                     # Process the audio chunk
                     self._process_and_queue_audio(audio_chunk)
-
                 else:
                     # Check queue status and playback
                     if self.is_busy:
@@ -577,74 +632,55 @@ class SonosPlayer(AudioPlayer):
                 time.sleep(0.5)
 
     def _process_and_queue_audio(self, audio_chunk):
-        """Process an audio chunk, convert it to MP3, and add it to the Sonos queue."""
+        """Process an audio chunk, convert it to MP3, and add it to the Sonos queue with deduplication."""
         if not self._sonos_device:
             self.logger.warning("No Sonos device connected, audio chunk ignored")
             return
 
         try:
+            # Zustandsänderung mit Lock schützen
+            with self._state_lock:
+                current_time = time.time()
+                was_busy = self.is_busy
+                self.is_busy = True
+                
+                # Nur ein Event senden, wenn wir gerade erst angefangen haben zu spielen
+                # UND eine Mindestzeit seit dem letzten Event vergangen ist
+                if not was_busy and (current_time - self.last_state_change) >= self.min_state_change_interval:
+                    self.last_state_change = current_time
+                    # Event in einem separaten Thread senden
+                    threading.Thread(
+                        target=self._send_start_event
+                    ).start()
+                    # Wenn wir wieder anfangen zu sprechen und ein Reset benötigt wird, setze dies zurück
+                    if self._needs_queue_reset:
+                        self._sonos_device.stop()
+                        self._sonos_device.clear_queue()
+                        self._queued_urls.clear()
+                        self._needs_queue_reset = False
+                        self._queue_initialized = False
+                        self.logger.debug("Queue reset at start of new response")
+
             # Create a unique filename for this chunk
             self._file_counter += 1
             chunk_filename = f"audio_chunk_{self._file_counter}.mp3"
             temp_file = os.path.join(self._temp_dir, chunk_filename)
 
-            # Convert PCM16 data to MP3 using pydub
-            try:
-
-                # Convert the PCM16 data (assuming 24kHz, mono) to MP3
-                # First try interpreting as raw PCM16 bytes
-                segment = AudioSegment(
-                    data=audio_chunk,
-                    sample_width=2,  # 16-bit
-                    frame_rate=24000,  # Typical rate for OpenAI Audio
-                    channels=1,  # Mono
-                )
-
-                self.logger.debug("Successfully created AudioSegment from PCM data")
-
-                # Export as MP3
-                segment.export(temp_file, format="mp3", bitrate="128k")
-
-                # Log file details
-                file_size = os.path.getsize(temp_file)
-                self.logger.debug(
-                    "Created MP3 file from PCM data: %s (size: %d bytes)",
-                    temp_file,
-                    file_size,
-                )
-
-                # Verify the file exists and is not empty
-                if not os.path.exists(temp_file) or file_size == 0:
-                    self.logger.error(
-                        "MP3 file creation failed or file is empty: %s", temp_file
-                    )
-                    return
-
-            except Exception as e:
-                self.logger.error("Error converting PCM to MP3: %s", e)
-
-                # Fallback: Try with array conversion if direct method fails
+            if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                self.logger.debug(f"Using existing file: {temp_file}")
+            else:
                 try:
-                    # Ensure we have an even number of bytes for 16-bit samples
-                    if len(audio_chunk) % 2 != 0:
-                        audio_chunk = audio_chunk[:-1]
-
-                    # Convert bytes to array of shorts
-                    samples = array.array("h")
-                    samples.frombytes(audio_chunk)
-
                     segment = AudioSegment(
-                        data=samples.tobytes(),
+                        data=audio_chunk,
                         sample_width=2,
-                        frame_rate=24000,
+                        frame_rate=RATE,
                         channels=1,
                     )
 
+                    self.logger.debug("Successfully created AudioSegment from PCM data")
+
                     # Export as MP3
                     segment.export(temp_file, format="mp3", bitrate="128k")
-                    self.logger.debug(
-                        "Successfully created MP3 with array conversion method"
-                    )
 
                     # Log file details
                     file_size = os.path.getsize(temp_file)
@@ -661,16 +697,57 @@ class SonosPlayer(AudioPlayer):
                         )
                         return
 
-                except Exception as e2:
-                    self.logger.error("Failed with array conversion too: %s", e2)
-                    # Last resort: just write the raw data and hope Sonos can handle it
-                    with open(temp_file, "wb") as f:
-                        f.write(audio_chunk)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    self.logger.warning(
-                        "Wrote raw audio data as last resort: %s", temp_file
-                    )
+                except Exception as e:
+                    self.logger.error("Error converting PCM to MP3: %s", e)
+
+                    # Fallback: Try with array conversion if direct method fails
+                    try:
+                        # Ensure we have an even number of bytes for 16-bit samples
+                        if len(audio_chunk) % 2 != 0:
+                            audio_chunk = audio_chunk[:-1]
+
+                        # Convert bytes to array of shorts
+                        samples = array.array("h")
+                        samples.frombytes(audio_chunk)
+
+                        segment = AudioSegment(
+                            data=samples.tobytes(),
+                            sample_width=2,
+                            frame_rate=RATE,
+                            channels=1,
+                        )
+
+                        # Export as MP3
+                        segment.export(temp_file, format="mp3", bitrate="128k")
+                        self.logger.debug(
+                            "Successfully created MP3 with array conversion method"
+                        )
+
+                        # Log file details
+                        file_size = os.path.getsize(temp_file)
+                        self.logger.debug(
+                            "Created MP3 file from PCM data: %s (size: %d bytes)",
+                            temp_file,
+                            file_size,
+                        )
+
+                        # Verify the file exists and is not empty
+                        if not os.path.exists(temp_file) or file_size == 0:
+                            self.logger.error(
+                                "MP3 file creation failed or file is empty: %s", temp_file
+                            )
+                            return
+
+                    except Exception as e2:
+                        self.logger.error("Failed with array conversion too: %s", e2)
+                        # Last resort: just write the raw data and hope Sonos can handle it
+                        with open(temp_file, "wb") as f:
+                            f.write(audio_chunk)
+                            f.flush()
+                            os.fsync(f.fileno())
+                        self.logger.warning(
+                            "Wrote raw audio data as last resort: %s", temp_file
+                        )
 
             # Create URL for the file
             file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_filename}"
@@ -682,9 +759,14 @@ class SonosPlayer(AudioPlayer):
 
             # Add to Sonos queue
             position = self._add_to_sonos_queue(file_url)
-            self.logger.debug(
-                "Added MP3 audio to Sonos queue at position %d: %s", position, file_url
-            )
+            if position > 0:
+                self.logger.debug(
+                    "Added MP3 audio to Sonos queue at position %d: %s", position, file_url
+                )
+            else:
+                self.logger.debug(
+                    "Skipped duplicate addition to queue: %s", file_url
+                )
 
         except Exception as e:
             self.logger.error("Error processing and queueing audio chunk: %s", e)
@@ -695,6 +777,7 @@ class SonosPlayer(AudioPlayer):
             # Clear any existing queue
             self._sonos_device.stop()
             self._sonos_device.clear_queue()
+            self._queued_urls.clear()
 
             # Add the first audio file to the queue
             position = self._add_to_sonos_queue(first_audio_url)
@@ -711,10 +794,26 @@ class SonosPlayer(AudioPlayer):
             self.logger.error("Error initializing Sonos queue: %s", e)
 
     def _add_to_sonos_queue(self, audio_url):
-        """Add an audio file to the Sonos queue and return its position."""
+        """Add an audio file to the Sonos queue and return its position with deduplication."""
         try:
+            # Überprüfen, ob diese URL bereits in der Queue ist
+            if audio_url in self._queued_urls:
+                self.logger.debug(f"Skipping duplicate URL in queue: {audio_url}")
+                return -1  # Skip duplicates
+                
+            # Bei einer neuen Gesprächsrunde die Queue komplett leeren
+            if self._needs_queue_reset:
+                self._sonos_device.stop()
+                self._sonos_device.clear_queue()
+                self._queued_urls.clear()
+                self._needs_queue_reset = False
+                self.logger.debug("Queue reset for new conversation")
+                
             # Add to Sonos queue
             position = self._sonos_device.add_uri_to_queue(audio_url)
+            
+            # Track this URL
+            self._queued_urls.add(audio_url)
 
             # If this is the first track and we're not playing, start playing
             transport_info = self._sonos_device.get_current_transport_info()
@@ -755,39 +854,88 @@ class SonosPlayer(AudioPlayer):
             if transport_state != "PLAYING" or (
                 current_position >= queue_size and len(self._audio_queue) == 0
             ):
-
-                self.is_busy = False
-                self._safely_notify_playback_completed()
+                # Zustandsänderung mit Lock schützen
+                with self._state_lock:
+                    current_time = time.time()
+                    
+                    # Prüfen, ob genug Zeit seit dem letzten Event vergangen ist
+                    if (self.is_busy and 
+                        (current_time - self.last_state_change) >= self.min_state_change_interval):
+                        self.is_busy = False
+                        self.last_state_change = current_time
+                        # Event in einem separaten Thread senden
+                        threading.Thread(
+                            target=self._send_complete_event
+                        ).start()
+                        # Nächste Antwort sollte mit frischer Queue beginnen
+                        self._needs_queue_reset = True
+                        
                 self._cleanup_old_files()
 
         except Exception as e:
             self.logger.error("Error checking playback status: %s", e)
 
+    def _send_start_event(self):
+        """Sendet das Start-Event in einem eigenen Thread"""
+        try:
+            self.logger.debug("Audio playback started - sending event")
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Fire the event synchronously to avoid event loop issues
+            self.event_bus.publish(EventType.ASSISTANT_STARTED_RESPONDING)
+            
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            self.logger.error(f"Failed to send start event: {e}")
+    
+    def _send_complete_event(self):
+        """Sendet das Complete-Event in einem eigenen Thread"""
+        try:
+            self.logger.debug("Audio playback complete - sending event")
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Fire the event synchronously to avoid event loop issues
+            self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
+            
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            self.logger.error(f"Failed to send complete event: {e}")
+
     def _safely_notify_playback_completed(self):
         """Send 'playback completed' event in a thread-safe way"""
-        try:
-            self.event_bus.publish_async_from_thread(
-                EventType.ASSISTANT_COMPLETED_RESPONDING
-            )
-            self.logger.debug("Audio playback stopped (event sent)")
-        except Exception as e:
-            self.logger.warning("Error sending event from thread: %s", e)
-            try:
-                self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-                self.logger.debug("Audio playback stopped (event sent via fallback)")
-            except Exception as e2:
-                self.logger.error("Error sending event via fallback: %s", e2)
+        threading.Thread(target=self._send_complete_event).start()
 
     def _cleanup_temp_files(self):
         """Clean up temporary files in the temp directory"""
         try:
-            # Delete all files in temporary directory
-            for file in os.listdir(self._temp_dir):
-                file_path = os.path.join(self._temp_dir, file)
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
+            # Nur Dateien löschen, die nicht mehr benötigt werden
+            files = [
+                os.path.join(self._temp_dir, f)
+                for f in os.listdir(self._temp_dir)
+                if os.path.isfile(os.path.join(self._temp_dir, f))
+            ]
+            
+            # Lösche alle Dateien außer den neuesten 5
+            files.sort(key=lambda x: os.path.getctime(x))
+            files_to_delete = files[:-5]  # Behalte die neuesten 5 Dateien
+            
+            for file_path in files_to_delete:
+                os.unlink(file_path)
+                # Remove from URL tracking if it was there
+                chunk_name = os.path.basename(file_path)
+                file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_name}"
+                if file_url in self._queued_urls:
+                    self._queued_urls.remove(file_url)
 
-            self.logger.debug("Temporary files cleaned up")
+            # Reset URL tracking für klarere Sitzungen
+            self._queued_urls.clear()
+            self.logger.debug("Temporary files cleaned up and tracking reset")
         except Exception as e:
             self.logger.warning("Error cleaning up temporary files: %s", e)
 
@@ -807,6 +955,11 @@ class SonosPlayer(AudioPlayer):
             files_to_delete = files[:-keep_latest] if len(files) > keep_latest else []
             for old_file in files_to_delete:
                 os.unlink(old_file)
+                # Remove from URL tracking if it was there
+                chunk_name = os.path.basename(old_file)
+                file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_name}"
+                if file_url in self._queued_urls:
+                    self._queued_urls.remove(file_url)
 
             if files_to_delete:
                 self.logger.debug(

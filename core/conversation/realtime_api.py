@@ -4,8 +4,7 @@ from typing import Any, Dict, List
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.microphone import PyAudioMicrophone
 from core.audio.response_audio_handler import ResponseAudioHandler
-from core.conversation.conversation_session_manager import \
-    ConversationSessionManager
+from core.conversation.conversation_session_manager import ConversationSessionManager
 from core.conversation.event_router import EventRouter
 from core.conversation.realtime_tool_handler import RealtimeToolHandler
 from core.websocket.websocket_manager import WebSocketManager
@@ -15,8 +14,13 @@ from plugins.tool_registry import ToolRegistry
 from plugins.volume_tool import get_volume_tool, set_volume_tool
 from plugins.weather.weather_tool import get_weather
 from plugins.web_search_tool import web_search_tool
-from resources.config import (OPENAI_HEADERS, OPENAI_WEBSOCKET_URL,
-                              SYSTEM_MESSAGE, TEMPERATURE, VOICE)
+from resources.config import (
+    OPENAI_HEADERS,
+    OPENAI_WEBSOCKET_URL,
+    SYSTEM_MESSAGE,
+    TEMPERATURE,
+    VOICE,
+)
 from shared.event_bus import EventBus
 from shared.logging_mixin import LoggingMixin
 
