@@ -22,7 +22,7 @@ from shared.singleton_meta_class import SingletonMetaClass
 
 
 class CustomHandler(SimpleHTTPRequestHandler):
-    """Verbesserter HTTP-Handler mit Deduplizierung von Audio-Chunk-Anfragen"""
+    """HTTP-Handler für das Sonos-System - ohne Deduplizierung"""
     
     def log_message(self, format, *args):
         # Suppress HTTP request logs for cleaner output
@@ -30,12 +30,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
     rbufsize = 64 * 1024
     
-    # Cache für Anfragen
+    # Cache für Anfragen-Logging (nur für Logging, nicht für Deduplizierung)
     _request_cache = {}
-    # Cache für bereits gesendete Audio-Chunks
-    _audio_chunk_cache = set()
     
-    # Audio-Chunk-Pattern für Erkennung
+    # Audio-Chunk-Pattern für Erkennung (nur für Logging-Zwecke)
     _audio_chunk_pattern = re.compile(r"/resources/sounds/temp/audio_chunk_\d+\.mp3$")
 
     def handle(self):
@@ -47,23 +45,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
     def is_audio_chunk(self, path):
         """Prüft, ob der Pfad einem Audio-Chunk entspricht"""
         return bool(self._audio_chunk_pattern.match(path))
-        
-    def send_not_modified(self):
-        """Sendet 304 Not Modified Antwort"""
-        self.send_response(304)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
 
     def do_GET(self):
-        """Handle GET requests with deduplication for audio chunks"""
-        # Prüfen, ob es sich um einen Audio-Chunk handelt und ob dieser bereits gesendet wurde
-        if self.is_audio_chunk(self.path) and self.path in self._audio_chunk_cache:
-            # Wenn ja, und es keine Range-Anfrage ist (wichtig für Audio-Streaming)
-            if 'Range' not in self.headers:
-                print(f"🔄 Preventing duplicate request for: {self.path}")
-                self.send_not_modified()
-                return
-        
+        """Handle GET requests without deduplication"""
         # Standardmäßiges Logging
         path_key = f"get_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
@@ -74,24 +58,11 @@ class CustomHandler(SimpleHTTPRequestHandler):
         else:
             print(f"🔍 HTTP GET Request for: {self.path}")
             self._request_cache[path_key] = current_time
-            
-        # Wenn es ein Audio-Chunk ist, zum Cache hinzufügen
-        if self.is_audio_chunk(self.path):
-            # Nur in den Cache aufnehmen, wenn die Datei existiert
-            if os.path.exists(self.translate_path(self.path)):
-                self._audio_chunk_cache.add(self.path)
         
         return super().do_GET()
 
     def do_HEAD(self):
-        """Handle HEAD requests with similar deduplication"""
-        # Für HEAD-Anfragen nutzen wir die gleiche Deduplizierung
-        if self.is_audio_chunk(self.path) and self.path in self._audio_chunk_cache:
-            if 'Range' not in self.headers:
-                print(f"🔄 Preventing duplicate HEAD request for: {self.path}")
-                self.send_not_modified()
-                return
-            
+        """Handle HEAD requests without deduplication"""
         path_key = f"head_{self.path}"
         last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
@@ -106,12 +77,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         """Add optimized caching headers"""
-        # Cache-Control mit optimierten Optionen für Audio-Streaming
         if self.is_audio_chunk(self.path):
-            # Stärkeres Caching für Audio-Chunks
-            self.send_header("Cache-Control", "public, max-age=3600, immutable")
+            self.send_header("Cache-Control", "public, max-age=60")
         else:
-            # Normal Caching für andere Ressourcen
             self.send_header("Cache-Control", "public, max-age=300")
         
         # ETag für effizientes Caching
@@ -161,7 +129,6 @@ class CustomHandler(SimpleHTTPRequestHandler):
             print(f"❌ File NOT found: {translated_path}")
                 
         return translated_path
-
 
 class SonosHTTPServer(metaclass=SingletonMetaClass):
     """Simple HTTP server to serve audio files for Sonos with singleton pattern."""
@@ -996,20 +963,14 @@ class SonosPlayer(AudioPlayer):
         """Sendet das Complete-Event in einem eigenen Thread und räumt alle temporären Dateien auf"""
         try:
             self.logger.debug("Audio playback complete - sending event")
-            # Create a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            # Fire the event synchronously to avoid event loop issues
-            self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-
-            # Close the loop
-            loop.close()
             
-            # Alle temporären Dateien aufräumen
+            self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
+            
+            self.logger.debug("Waiting 1 second before cleaning up files...")
+            time.sleep(1)
+            
             self._cleanup_all_temp_files()
             
-            # Datei-Zähler zurücksetzen für die nächste Antwort
             self._file_counter = 0
             self.logger.debug("File counter reset to 0 for next response")
             
