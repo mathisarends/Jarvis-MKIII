@@ -303,16 +303,14 @@ class EventRouter(LoggingMixin):
 
         delay_seconds = 1.0
         await asyncio.sleep(delay_seconds)
-        
+
         self.logger.info("Executing delayed VAD re-enable")
 
         self.last_vad_enable_time = time.time()
 
         session_update = {
             "type": "session.update",
-            "session": {
-                "turn_detection": {"type": "server_vad"}
-            }
+            "session": {"turn_detection": {"type": "server_vad"}},
         }
 
         try:

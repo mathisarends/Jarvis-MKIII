@@ -17,93 +17,105 @@ from typing_extensions import override
 from core.audio.audio_player_base import AudioPlayer
 from resources.config import RATE
 from shared.event_bus import EventBus, EventType
+from shared.logging_mixin import LoggingMixin
 from shared.singleton_meta_class import SingletonMetaClass
 
 
-class CustomHandler(SimpleHTTPRequestHandler):
-    """Verbesserter HTTP-Handler mit Caching und Deduplizierung von Anfragen"""
-    
-    def log_message(self, format, *args):
-        # Suppress HTTP request logs for cleaner output
-        pass
+class CustomHandler(SimpleHTTPRequestHandler, LoggingMixin):
+    """Enhanced HTTP handler with caching and optimized logging"""
 
     rbufsize = 64 * 1024
-    
-    # Cache für HEAD-Anfragen
-    _head_request_cache = {}
+
+    _request_cache = {}
+
+    def log_message(self, format, *args):
+        # Suppress default logging
+        pass
 
     def handle(self):
         try:
             super().handle()
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            self.logger.debug("Connection closed by client")
 
     def do_GET(self):
-        """Handle GET requests with optimized logging"""
-        # Optimierte Logging-Strategie: Nur neue oder wichtige Anfragen vollständig loggen
+        """Handle GET requests with minimal logging"""
         path_key = f"get_{self.path}"
-        last_time = self._head_request_cache.get(path_key, 0)
+        last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
-        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
-            print(f"↩️ Repeat GET request for: {self.path}")
+
+        if current_time - last_time < 5:
+            self.logger.debug(f"Repeat GET request: {self.path}")
         else:
-            print(f"🔍 HTTP GET Request for: {self.path}")
-            self._head_request_cache[path_key] = current_time
-            
+            self.logger.debug(f"GET request: {self.path}")
+            self._request_cache[path_key] = current_time
+
         return super().do_GET()
 
     def do_HEAD(self):
-        """Handle HEAD requests with caching to reduce duplicate logs"""
+        """Handle HEAD requests with minimal logging"""
         path_key = f"head_{self.path}"
-        last_time = self._head_request_cache.get(path_key, 0)
+        last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
-        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
-            print(f"↩️ Repeat HEAD request for: {self.path}")
+
+        if current_time - last_time < 5:
+            self.logger.debug(f"Repeat HEAD request: {self.path}")
         else:
-            print(f"🔍 HTTP HEAD Request for: {self.path}")
-            self._head_request_cache[path_key] = current_time
-            
+            self.logger.debug(f"HEAD request: {self.path}")
+            self._request_cache[path_key] = current_time
+
         return super().do_HEAD()
 
     def end_headers(self):
-        """Add caching headers to reduce redundant requests"""
-        # Füge Caching-Header hinzu, um wiederholte Anfragen zu reduzieren
-        self.send_header("Cache-Control", "max-age=300")  # 5 Minuten Cache
-        self.send_header("ETag", f"\"{int(time.time())}\"")
+        """Add performance-focused caching headers"""
+        # Cache-Control: Controls client-side caching behavior
+        # - max-age=300: Allows caching for 5 minutes
+        # - public: Can be cached by shared/proxy caches
+        # - immutable: Indicates the resource content won't change
+        self.send_header("Cache-Control", "public, max-age=300, immutable")
+
+        # ETag: Allows conditional requests based on file metadata
+        file_path = self.translate_path(self.path)
+        if os.path.exists(file_path):
+            stat_result = os.stat(file_path)
+            etag = f'"{stat_result.st_mtime}_{stat_result.st_size}"'
+            self.send_header("ETag", etag)
+
+        # Accept-Ranges: Enables support for partial requests (e.g., media streaming)
+        self.send_header("Accept-Ranges", "bytes")
+
+        # Connection: Keep-Alive improves performance on multiple requests
+        self.send_header("Connection", "keep-alive")
+
         super().end_headers()
 
     def guess_type(self, path):
-        """Overridden method to provide correct MIME types for audio files."""
+        """Optimized MIME type guessing for audio files"""
         _, ext = os.path.splitext(path)
         if ext.lower() == ".wav":
             return "audio/wav"
-        elif ext.lower() == ".mp3":
+        if ext.lower() == ".mp3":
             return "audio/mpeg"
         return super().guess_type(path)
 
     def translate_path(self, path):
-        """Overridden to ensure proper file serving with optimized logging."""
+        """Path resolution with minimal logging and early return optimization"""
         translated_path = super().translate_path(path)
-        
-        # Optimierte Logging-Strategie
+
         path_key = f"path_{path}"
-        last_time = self._head_request_cache.get(path_key, 0)
+        last_time = self._request_cache.get(path_key, 0)
         current_time = time.time()
-        
-        if current_time - last_time < 5:  # Wiederholte Anfrage in den letzten 5 Sekunden
-            if os.path.exists(translated_path):
-                pass  # Kein Logging für wiederholte Existenz-Checks
-            else:
-                print(f"❌ File still NOT found: {translated_path}")
+
+        if current_time - last_time < 5:
+            return translated_path
+
+        self._request_cache[path_key] = current_time
+
+        if os.path.exists(translated_path):
+            self.logger.debug(f"Serving file: {translated_path}")
         else:
-            self._head_request_cache[path_key] = current_time
-            if os.path.exists(translated_path):
-                print(f"✅ File exists: {translated_path}")
-            else:
-                print(f"❌ File NOT found: {translated_path}")
-                
+            self.logger.warning(f"File not found: {translated_path}")
+
         return translated_path
 
 
@@ -243,8 +255,12 @@ class SonosPlayer(AudioPlayer):
         self._needs_queue_reset = False  # Flag zur Steuerung von Queue-Resets
 
         # Neue Attribute für sequentielle Wiedergabe
-        self._expected_next_position = 1  # Position, die als nächstes gespielt werden sollte
-        self._queue_management_lock = threading.Lock()  # Lock für Warteschlangenoperationen
+        self._expected_next_position = (
+            1  # Position, die als nächstes gespielt werden sollte
+        )
+        self._queue_management_lock = (
+            threading.Lock()
+        )  # Lock für Warteschlangenoperationen
         self._playback_sequence = []  # Liste zur Verfolgung der Wiedergabereihenfolge
         self._playing_position = 0  # Aktuelle Wiedergabeposition
 
@@ -365,7 +381,7 @@ class SonosPlayer(AudioPlayer):
                 self._queued_urls.clear()
                 self._needs_queue_reset = False
                 self._queue_initialized = False
-                
+
                 # Reset sequence tracking
                 self._playback_sequence = []
                 self._playing_position = 0
@@ -658,14 +674,18 @@ class SonosPlayer(AudioPlayer):
                 current_time = time.time()
                 was_busy = self.is_busy
                 self.is_busy = True
-                
+
                 # Nur ein Event senden, wenn wir gerade erst angefangen haben zu spielen
                 # UND eine Mindestzeit seit dem letzten Event vergangen ist
-                if not was_busy and (current_time - self.last_state_change) >= self.min_state_change_interval:
+                if (
+                    not was_busy
+                    and (current_time - self.last_state_change)
+                    >= self.min_state_change_interval
+                ):
                     self.last_state_change = current_time
                     # Event in einem separaten Thread senden
                     threading.Thread(target=self._send_start_event).start()
-                    
+
                     # Wenn wir wieder anfangen zu sprechen und ein Reset benötigt wird, setze dies zurück
                     if self._needs_queue_reset:
                         self._sonos_device.stop()
@@ -673,12 +693,12 @@ class SonosPlayer(AudioPlayer):
                         self._queued_urls.clear()
                         self._needs_queue_reset = False
                         self._queue_initialized = False
-                        
+
                         # Sequenzierung zurücksetzen
                         self._playback_sequence = []
                         self._playing_position = 0
                         self._expected_next_position = 1
-                        
+
                         self.logger.debug("Queue reset at start of new response")
 
             # Create a unique filename for this chunk
@@ -754,7 +774,8 @@ class SonosPlayer(AudioPlayer):
                         # Verify the file exists and is not empty
                         if not os.path.exists(temp_file) or file_size == 0:
                             self.logger.error(
-                                "MP3 file creation failed or file is empty: %s", temp_file
+                                "MP3 file creation failed or file is empty: %s",
+                                temp_file,
                             )
                             return
 
@@ -784,15 +805,15 @@ class SonosPlayer(AudioPlayer):
             # Add to Sonos queue with sequence control
             with self._queue_management_lock:
                 position = self._add_to_sonos_queue_in_sequence(file_url)
-                
+
             if position > 0:
                 self.logger.debug(
-                    "Added MP3 audio to Sonos queue at position %d: %s", position, file_url
+                    "Added MP3 audio to Sonos queue at position %d: %s",
+                    position,
+                    file_url,
                 )
             else:
-                self.logger.debug(
-                    "Skipped duplicate addition to queue: %s", file_url
-                )
+                self.logger.debug("Skipped duplicate addition to queue: %s", file_url)
 
         except Exception as e:
             self.logger.error("Error processing and queueing audio chunk: %s", e)
@@ -826,24 +847,30 @@ class SonosPlayer(AudioPlayer):
             if audio_url in self._queued_urls:
                 self.logger.debug(f"Skipping duplicate URL in queue: {audio_url}")
                 return -1  # Skip duplicates
-                
+
             # Sequenznummer aus der URL extrahieren
             try:
                 # Extrahiere Nummer aus "audio_chunk_X.mp3"
-                file_name = audio_url.split('/')[-1]
-                chunk_num = int(file_name.split('_')[2].split('.')[0])
-                
+                file_name = audio_url.split("/")[-1]
+                chunk_num = int(file_name.split("_")[2].split(".")[0])
+
                 # In chronologischer Reihenfolge zur Sequenz hinzufügen
                 self._playback_sequence.append(audio_url)
-                
+
                 # Sortieren der _playback_sequence nach Chunk-Nummer
-                self._playback_sequence.sort(key=lambda url: int(url.split('/')[-1].split('_')[2].split('.')[0]))
-                
-                self.logger.debug(f"Current sequence: {[url.split('/')[-1] for url in self._playback_sequence]}")
+                self._playback_sequence.sort(
+                    key=lambda url: int(url.split("/")[-1].split("_")[2].split(".")[0])
+                )
+
+                self.logger.debug(
+                    f"Current sequence: {[url.split('/')[-1] for url in self._playback_sequence]}"
+                )
             except Exception as e:
-                self.logger.warning(f"Failed to extract sequence number: {e}, adding to end")
+                self.logger.warning(
+                    f"Failed to extract sequence number: {e}, adding to end"
+                )
                 self._playback_sequence.append(audio_url)
-                
+
             # Bei einer neuen Gesprächsrunde die Queue komplett leeren
             if self._needs_queue_reset:
                 self._sonos_device.stop()
@@ -851,43 +878,54 @@ class SonosPlayer(AudioPlayer):
                 self._queued_urls.clear()
                 self._needs_queue_reset = False
                 self.logger.debug("Queue reset for new conversation")
-            
+
             # Sonos-Warteschlange neu aufbauen um richtige Reihenfolge zu garantieren
             if len(self._playback_sequence) > 1:
                 position_in_list = self._playback_sequence.index(audio_url)
-                
+
                 # Wenn dieses Audio-Chunk nicht das nächste in der Sequenz ist,
                 # organisieren wir die gesamte Queue neu um die korrekte Reihenfolge wiederherzustellen
                 if position_in_list != len(self._playback_sequence) - 1:
                     # Warte kurz mit dem Hinzufügen, bis die Datei vollständig geschrieben ist
                     time.sleep(0.1)
-                    
+
                     # Aktuelle Wiedergabeposition merken
                     try:
-                        current_position = int(self._sonos_device.get_current_track_info().get("playlist_position", 1)) - 1
+                        current_position = (
+                            int(
+                                self._sonos_device.get_current_track_info().get(
+                                    "playlist_position", 1
+                                )
+                            )
+                            - 1
+                        )
                         if current_position < 0:
                             current_position = 0
                     except:
                         current_position = 0
-                    
+
                     # Leere die bestehende Queue
                     self._sonos_device.stop()
                     self._sonos_device.clear_queue()
                     self._queued_urls.clear()
-                    
+
                     # Füge alle Dateien in der sortierten Reihenfolge hinzu
                     for idx, url in enumerate(self._playback_sequence):
                         pos = self._sonos_device.add_uri_to_queue(url)
                         self._queued_urls.add(url)
-                        self.logger.debug(f"Re-added {url.split('/')[-1]} at position {pos}")
-                    
+                        self.logger.debug(
+                            f"Re-added {url.split('/')[-1]} at position {pos}"
+                        )
+
                     # Wiedergabe fortsetzen, wenn wir unterbrochen haben
                     if current_position < len(self._playback_sequence):
                         self._sonos_device.play_from_queue(current_position)
-                        self.logger.debug(f"Resumed playback from position {current_position}")
+                        self.logger.debug(
+                            f"Resumed playback from position {current_position}"
+                        )
                     else:
                         self._sonos_device.play_from_queue(0)
-                    
+
                     return len(self._playback_sequence)
                 else:
                     # Normaler Ablauf: Einfach das Element ans Ende der Queue anhängen
@@ -932,18 +970,27 @@ class SonosPlayer(AudioPlayer):
                 queue_size,
                 queue_size,
             )
-            
+
             # Überprüfung, ob Sonos den aktuellen Track übersprungen hat
             with self._queue_management_lock:
                 if current_position > 0 and self._playing_position > 0:
                     expected_next = self._playing_position + 1
-                    if current_position != expected_next and current_position != self._playing_position:
-                        self.logger.warning(f"Detected out-of-sequence playback: expected={expected_next}, actual={current_position}")
+                    if (
+                        current_position != expected_next
+                        and current_position != self._playing_position
+                    ):
+                        self.logger.warning(
+                            f"Detected out-of-sequence playback: expected={expected_next}, actual={current_position}"
+                        )
                         # Versuche, zur richtigen Position zu springen
                         if expected_next <= queue_size:
-                            self._sonos_device.play_from_queue(expected_next - 1)  # Sonos verwendet 0-indexiert für play_from_queue
-                            self.logger.debug(f"Corrected playback position to {expected_next}")
-                
+                            self._sonos_device.play_from_queue(
+                                expected_next - 1
+                            )  # Sonos verwendet 0-indexiert für play_from_queue
+                            self.logger.debug(
+                                f"Corrected playback position to {expected_next}"
+                            )
+
                 # Aktuelle Position aktualisieren
                 if current_position > 0:
                     self._playing_position = current_position
@@ -956,16 +1003,17 @@ class SonosPlayer(AudioPlayer):
                 # Zustandsänderung mit Lock schützen
                 with self._state_lock:
                     current_time = time.time()
-                    
+
                     # Prüfen, ob genug Zeit seit dem letzten Event vergangen ist
-                    if (self.is_busy and 
-                        (current_time - self.last_state_change) >= self.min_state_change_interval):
+                    if (
+                        self.is_busy
+                        and (current_time - self.last_state_change)
+                        >= self.min_state_change_interval
+                    ):
                         self.is_busy = False
                         self.last_state_change = current_time
                         # Event in einem separaten Thread senden
-                        threading.Thread(
-                            target=self._send_complete_event
-                        ).start()
+                        threading.Thread(target=self._send_complete_event).start()
                         # Nächste Antwort sollte mit frischer Queue beginnen
                         self._needs_queue_reset = True
 
@@ -979,15 +1027,15 @@ class SonosPlayer(AudioPlayer):
             # Create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             # Fire the event synchronously to avoid event loop issues
             self.event_bus.publish(EventType.ASSISTANT_STARTED_RESPONDING)
-            
+
             # Close the loop
             loop.close()
         except Exception as e:
             self.logger.error(f"Failed to send start event: {e}")
-    
+
     def _send_complete_event(self):
         """Sendet das Complete-Event in einem eigenen Thread"""
         try:
@@ -995,10 +1043,10 @@ class SonosPlayer(AudioPlayer):
             # Create a new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             # Fire the event synchronously to avoid event loop issues
             self.event_bus.publish(EventType.ASSISTANT_COMPLETED_RESPONDING)
-            
+
             # Close the loop
             loop.close()
         except Exception as e:
@@ -1013,11 +1061,11 @@ class SonosPlayer(AudioPlayer):
                 for f in os.listdir(self._temp_dir)
                 if os.path.isfile(os.path.join(self._temp_dir, f))
             ]
-            
+
             # Lösche alle Dateien außer den neuesten 5
             files.sort(key=lambda x: os.path.getctime(x))
             files_to_delete = files[:-5]  # Behalte die neuesten 5 Dateien
-            
+
             for file_path in files_to_delete:
                 os.unlink(file_path)
                 # Remove from URL tracking if it was there
