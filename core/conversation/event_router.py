@@ -1,3 +1,4 @@
+import asyncio
 from functools import cached_property
 from typing import Any, Dict, List
 
@@ -172,8 +173,13 @@ class EventRouter(LoggingMixin):
         self.audio_handler = audio_handler
         self.tool_handler = tool_handler
         self.ws_manager = ws_manager
-        
+
         self.vad_enabled = True
+
+        self.event_bus.subscribe(
+            event_type=EventType.ASSISTANT_COMPLETED_RESPONDING,
+            callback=self.enable_vad_wrapper,
+        )
 
     async def process_event(self, event_type: str, response: Dict[str, Any]) -> None:
         """
@@ -183,41 +189,28 @@ class EventRouter(LoggingMixin):
             event_type: The type of the event
             response: The complete response object
         """
-        # Using early returns for cleaner control flow
-        if event_type == "response.done":
-            await self._handle_response_done(response)
-            return
+        match event_type:
+            case "response.done":
+                await self._handle_response_done(response)
 
-        # VAD control: Turn on VAD when assistant stops speaking
-        if event_type == "response.audio.done":
-            print("response_audio_stopped")
-            await self._enable_vad()
-            return
-            
-        # Original event handling continues...
-        if event_type == "input_audio_buffer.speech_started":
-            await self._handle_speech_started()
-            return
+            case "input_audio_buffer.speech_started":
+                if self.vad_enabled:
+                    await self._handle_speech_started()
 
-        if event_type == "input_audio_buffer.speech_stopped":
-            self._handle_speech_stopped()
-            return
+            case "input_audio_buffer.speech_stopped":
+                await self._handle_speech_stopped()
 
-        if event_type == "conversation.item.input_audio_transcription.completed":
-            self._handle_transcription_completed(response)
-            return
+            case "conversation.item.input_audio_transcription.completed":
+                self._handle_transcription_completed(response)
 
-        if event_type == "response.audio.delta":
-            await self._disable_vad()
-            self.audio_handler.handle_audio_delta(response)
-            return
+            case "response.audio.delta":
+                self.audio_handler.handle_audio_delta(response)
 
-        if event_type == "conversation.item.truncated":
-            self.logger.info("Conversation item truncated event received")
-            return
+            case "conversation.item.truncated":
+                self.logger.info("Conversation item truncated event received")
 
-        if event_type in ["error", "session.updated", "session.created"]:
-            self._handle_system_event(event_type, response)
+            case "error" | "session.updated" | "session.created":
+                self._handle_system_event(event_type, response)
 
     async def _handle_response_done(self, response: Dict[str, Any]) -> None:
         """Processes response.done events"""
@@ -240,8 +233,9 @@ class EventRouter(LoggingMixin):
         self.audio_handler.stop_playback()
         self.event_bus.publish(EventType.USER_SPEECH_STARTED)
 
-    def _handle_speech_stopped(self) -> None:
+    async def _handle_speech_stopped(self) -> None:
         """Processes speech_stopped events"""
+        await self._disable_vad()
         self.event_bus.publish(event_type=EventType.USER_SPEECH_ENDED)
 
     def _handle_transcription_completed(self, response: Dict[str, Any]) -> None:
@@ -258,22 +252,20 @@ class EventRouter(LoggingMixin):
         if event_type == "error":
             self.logger.error("API error: %s", response)
 
-
     async def _disable_vad(self) -> None:
         """
         Disable VAD when the assistant starts speaking to prevent self-triggering.
-        """        
+        """
         if not self.vad_enabled:
             return
-        
+
         print("[VAD] Disabling VAD - assistant is speaking")
         self.logger.info("Assistant started speaking - disabling VAD")
-        
+
         try:
-            await self.ws_manager.send_message({
-                "type": "session.update",
-                "session": { "turn_detection": None }
-            })
+            await self.ws_manager.send_message(
+                {"type": "session.update", "session": {"turn_detection": None}}
+            )
             self.vad_enabled = False
             print("[VAD] VAD disabled successfully")
             self.logger.debug("VAD disabled during assistant speech")
@@ -281,24 +273,26 @@ class EventRouter(LoggingMixin):
             print(f"[VAD] ERROR: Failed to disable VAD: {e}")
             self.logger.error(f"Failed to disable VAD: {e}")
 
+    def enable_vad_wrapper(self, data=None):
+        print("[VAD] Event received: ASSISTANT_COMPLETED_RESPONDING")
+        asyncio.create_task(self._enable_vad())
+
     async def _enable_vad(self) -> None:
         """
         Re-enable VAD when the assistant stops speaking.
         """
         if self.vad_enabled:
             return
-            
+
         print("[VAD] Re-enabling VAD - assistant stopped speaking")
         self.logger.debug("Assistant stopped speaking - re-enabling VAD")
-        
+
         # Create a session update to re-enable original VAD settings
         session_update = {
             "type": "session.update",
-            "session": {
-                "turn_detection": {"type": "server_vad"}
-            }
+            "session": {"turn_detection": {"type": "server_vad"}},
         }
-        
+
         # Send the session update via WebSocket
         try:
             await self.ws_manager.send_message(session_update)

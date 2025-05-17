@@ -123,7 +123,6 @@ class SonosHTTPServer(metaclass=SingletonMetaClass):
             print(f"❌ Error starting HTTP server: {e}")
             return self
 
-
     def stop(self):
         """Stop the HTTP server."""
         if not self._is_running or self._server is None:
@@ -164,9 +163,10 @@ class SonosHTTPServer(metaclass=SingletonMetaClass):
 
         url_path = str(rel_path).replace("\\", "/")
         url = f"http://{self.server_ip}:{self.port}/{url_path}"
-        
+
         print(f"🔍 Created URL: {url}")
         return url
+
 
 class SonosPlayer(AudioPlayer):
     """Implementation of AudioPlayer for Sonos speakers using queue functionality"""
@@ -591,65 +591,76 @@ class SonosPlayer(AudioPlayer):
             # Convert PCM16 data to MP3 using pydub
             try:
 
-
                 # Convert the PCM16 data (assuming 24kHz, mono) to MP3
                 # First try interpreting as raw PCM16 bytes
                 segment = AudioSegment(
                     data=audio_chunk,
                     sample_width=2,  # 16-bit
                     frame_rate=24000,  # Typical rate for OpenAI Audio
-                    channels=1  # Mono
+                    channels=1,  # Mono
                 )
-                
+
                 self.logger.debug("Successfully created AudioSegment from PCM data")
-                    
+
                 # Export as MP3
                 segment.export(temp_file, format="mp3", bitrate="128k")
-                
+
                 # Log file details
                 file_size = os.path.getsize(temp_file)
-                self.logger.debug("Created MP3 file from PCM data: %s (size: %d bytes)", 
-                                temp_file, file_size)
-                
+                self.logger.debug(
+                    "Created MP3 file from PCM data: %s (size: %d bytes)",
+                    temp_file,
+                    file_size,
+                )
+
                 # Verify the file exists and is not empty
                 if not os.path.exists(temp_file) or file_size == 0:
-                    self.logger.error("MP3 file creation failed or file is empty: %s", temp_file)
+                    self.logger.error(
+                        "MP3 file creation failed or file is empty: %s", temp_file
+                    )
                     return
-                    
+
             except Exception as e:
                 self.logger.error("Error converting PCM to MP3: %s", e)
-                
+
                 # Fallback: Try with array conversion if direct method fails
                 try:
                     # Ensure we have an even number of bytes for 16-bit samples
                     if len(audio_chunk) % 2 != 0:
                         audio_chunk = audio_chunk[:-1]
-                    
+
                     # Convert bytes to array of shorts
-                    samples = array.array('h')
+                    samples = array.array("h")
                     samples.frombytes(audio_chunk)
-                    
+
                     segment = AudioSegment(
                         data=samples.tobytes(),
                         sample_width=2,
                         frame_rate=24000,
-                        channels=1
+                        channels=1,
                     )
-                    
+
                     # Export as MP3
                     segment.export(temp_file, format="mp3", bitrate="128k")
-                    self.logger.debug("Successfully created MP3 with array conversion method")
-                    
+                    self.logger.debug(
+                        "Successfully created MP3 with array conversion method"
+                    )
+
                     # Log file details
                     file_size = os.path.getsize(temp_file)
-                    self.logger.debug("Created MP3 file from PCM data: %s (size: %d bytes)", 
-                                    temp_file, file_size)
-                    
+                    self.logger.debug(
+                        "Created MP3 file from PCM data: %s (size: %d bytes)",
+                        temp_file,
+                        file_size,
+                    )
+
                     # Verify the file exists and is not empty
                     if not os.path.exists(temp_file) or file_size == 0:
-                        self.logger.error("MP3 file creation failed or file is empty: %s", temp_file)
+                        self.logger.error(
+                            "MP3 file creation failed or file is empty: %s", temp_file
+                        )
                         return
-                    
+
                 except Exception as e2:
                     self.logger.error("Failed with array conversion too: %s", e2)
                     # Last resort: just write the raw data and hope Sonos can handle it
@@ -657,7 +668,9 @@ class SonosPlayer(AudioPlayer):
                         f.write(audio_chunk)
                         f.flush()
                         os.fsync(f.fileno())
-                    self.logger.warning("Wrote raw audio data as last resort: %s", temp_file)
+                    self.logger.warning(
+                        "Wrote raw audio data as last resort: %s", temp_file
+                    )
 
             # Create URL for the file
             file_url = f"http://{self._http_server.server_ip}:{self._http_server.port}/resources/sounds/temp/{chunk_filename}"
@@ -669,7 +682,9 @@ class SonosPlayer(AudioPlayer):
 
             # Add to Sonos queue
             position = self._add_to_sonos_queue(file_url)
-            self.logger.debug("Added MP3 audio to Sonos queue at position %d: %s", position, file_url)
+            self.logger.debug(
+                "Added MP3 audio to Sonos queue at position %d: %s", position, file_url
+            )
 
         except Exception as e:
             self.logger.error("Error processing and queueing audio chunk: %s", e)

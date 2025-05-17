@@ -62,7 +62,7 @@ class WebSocketManager(LoggingMixin):
 
         try:
             await self.connection.send(json.dumps(message))
-            
+
             return True
         except Exception as e:
             self.logger.error("Error sending message: %s", e)

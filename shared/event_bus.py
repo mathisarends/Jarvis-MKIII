@@ -2,11 +2,11 @@
 Implementation of an Event Bus system to avoid property drilling.
 """
 
-from enum import Enum, auto
 import asyncio
 import inspect
 import threading
-from typing import Dict, List, Callable, Any
+from enum import Enum, auto
+from typing import Any, Callable, Dict, List
 
 from shared.singleton_meta_class import SingletonMetaClass
 
@@ -124,11 +124,11 @@ class EventBus(metaclass=SingletonMetaClass):
         """
         Thread-safe method to asynchronously publish events.
         Can be called from synchronous contexts.
-
-        Args:
-            event_type: The type of the event
-            data: Optional data to pass to subscribers
         """
+        print("PUBLISHING ASYNC FROM THREAD")
+        print("Event Type:", event_type)
+        print("====")
+
         sync_subscribers = [
             cb
             for cb in self._subscribers[event_type]
@@ -151,14 +151,21 @@ class EventBus(metaclass=SingletonMetaClass):
             return
 
         try:
-            if threading.current_thread() is not threading.main_thread():
+            # Versuchen, den existierenden Event Loop zu bekommen
+            try:
                 loop = asyncio.get_event_loop()
+            except RuntimeError:
+                # Wenn kein Event Loop verfügbar ist, erstelle einen neuen
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            # Die Callbacks ausführen
+            if threading.current_thread() is not threading.main_thread():
                 loop.call_soon_threadsafe(
                     lambda: self._schedule_async_callbacks(async_subscribers, data)
                 )
             else:
                 self._schedule_async_callbacks(async_subscribers, data)
-
         except Exception as e:
             print(f"Error in publish_async_from_thread: {e}")
             # Fallback: Verwende synchrones Publishen
@@ -195,16 +202,29 @@ class EventBus(metaclass=SingletonMetaClass):
     def _safe_invoke_callback(self, callback: Callable, data: Any = None) -> None:
         """
         Safely invokes a callback by checking its signature and passing appropriate parameters.
-
-        Args:
-            callback: The callback function to invoke
-            data: The data to pass to the callback if its signature accepts it
         """
         sig = inspect.signature(callback)
-        if len(sig.parameters) == 0:
-            callback()
+
+        # Überprüfen, ob es sich um eine asynchrone Funktion handelt
+        if asyncio.iscoroutinefunction(callback):
+            # Ja, asynchrone Funktion als Task ausführen
+            try:
+                loop = asyncio.get_event_loop()
+                if len(sig.parameters) == 0:
+                    loop.create_task(callback())
+                else:
+                    loop.create_task(callback(data))
+            except RuntimeError:
+                # Kein Event Loop verfügbar (z.B. in einem anderen Thread)
+                print(
+                    f"Warning: Async callback {callback.__name__} could not be awaited, no event loop available"
+                )
         else:
-            callback(data)
+            # Nein, normale Funktion direkt aufrufen
+            if len(sig.parameters) == 0:
+                callback()
+            else:
+                callback(data)
 
     async def _safe_invoke_async_callback(
         self, callback: Callable, data: Any = None
