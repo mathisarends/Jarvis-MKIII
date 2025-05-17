@@ -513,7 +513,7 @@ class SonosPlayer(AudioPlayer):
             self.logger.error("Error adding audio chunk: %s", e)
 
     @override
-    def play_sound(self, sound_name: str) -> bool:
+    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
         """Play a sound file"""
         try:
             # Determine path to sound file

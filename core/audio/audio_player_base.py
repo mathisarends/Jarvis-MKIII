@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from shared.logging_mixin import LoggingMixin
 
@@ -27,10 +28,18 @@ class AudioPlayer(ABC, LoggingMixin):
 
     # TODO: Refactor this here it should be sound path as well
     @abstractmethod
-    def play_sound(self, sound_name: str) -> bool:
+    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
         """
         Play a sound file by name.
+        
+        Args:
+            sound_name: Name of the sound file (with or without .mp3 extension)
+            volume: Optional volume override (0.0 to 1.0). If None, uses the player's current volume.
+            
+        Returns:
+            True if playback started successfully, False otherwise
         """
+        pass
 
     @abstractmethod
     def set_volume_level(self, volume: float):

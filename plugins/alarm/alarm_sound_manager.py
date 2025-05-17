@@ -34,7 +34,6 @@ class AlarmSoundManager(metaclass=SingletonMetaClass):
                              If None, will use default path in resources.
         """
         if sounds_base_path is None:
-            # Default sounds path relative to project root
             self.sounds_base_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                 "resources",
@@ -136,7 +135,6 @@ class AlarmSoundManager(metaclass=SingletonMetaClass):
             
             
 if __name__ == "__main__":
-    # Example usage
     sound_manager = AlarmSoundManager()
     
     wake_up_options = sound_manager.get_wake_up_sound_options()

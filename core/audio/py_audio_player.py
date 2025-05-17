@@ -5,6 +5,7 @@ import queue
 import threading
 import time
 import traceback
+from typing import Optional
 
 import numpy as np
 import pyaudio
@@ -144,12 +145,13 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.logger.info("Audio player stopped")
 
     @override
-    def play_sound(self, sound_name: str) -> bool:
+    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
         """
         Play a sound file asynchronously (non-blocking).
 
         Args:
             sound_name: Name of the sound file (with or without .mp3 extension)
+            volume: Optional volume override (0.0 to 1.0). If None, uses the player's current volume.
 
         Returns:
             True if playback started successfully, False otherwise
@@ -165,7 +167,10 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 pygame.mixer.init()
 
             sound = pygame.mixer.Sound(sound_path)
-            sound.set_volume(self.volume)
+            
+            actual_volume = volume if volume is not None else self.volume
+            sound.set_volume(actual_volume)
+            
             sound.play()
 
             return True
