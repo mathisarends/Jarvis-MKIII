@@ -13,9 +13,7 @@ const HeaderWrapper: React.FC = () => {
     navigate(-1);
   };
 
-  const profilePicture = "https://i.pravatar.cc/150?img=3";
-
-  return <Header title={currentRoute.title} onBackClick={handleBack} profilePicture={profilePicture} />;
+  return <Header title={currentRoute.title} onBackClick={handleBack} />;
 };
 
 export default HeaderWrapper;
