@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Home, AlarmClock, MessageSquare, BarChart3, User } from "lucide-react";
 
 interface NavItem {
@@ -7,9 +7,13 @@ interface NavItem {
   label: string;
 }
 
-const NavbarComponent: React.FC = () => {
-  const [activeRoute, setActiveRoute] = useState<string>("/home");
+// Define the props interface
+interface NavbarComponentProps {
+  activeRoute: string;
+  onNavItemClick: (route: string) => void;
+}
 
+const NavbarComponent: React.FC<NavbarComponentProps> = ({ activeRoute, onNavItemClick }) => {
   const navItems: NavItem[] = [
     { route: "/home", icon: "home", label: "Home" },
     { route: "/alarm", icon: "alarm", label: "Wecker" },
@@ -17,10 +21,6 @@ const NavbarComponent: React.FC = () => {
     { route: "/stats", icon: "stats", label: "Statistik" },
     { route: "/profile", icon: "profile", label: "Profil" },
   ];
-
-  const handleSetActive = (route: string) => {
-    setActiveRoute(route);
-  };
 
   const renderIcon = (iconName: string, isActive: boolean, isHovered: boolean) => {
     const iconColor = isActive || isHovered ? "#FFFFFF" : "#9CA3AF";
@@ -59,7 +59,7 @@ const NavbarComponent: React.FC = () => {
       {navItems.map((item, idx) => (
         <div
           key={item.route}
-          onClick={() => handleSetActive(item.route)}
+          onClick={() => onNavItemClick(item.route)}
           onMouseEnter={() => setHoveredIdx(idx)}
           onMouseLeave={() => setHoveredIdx(null)}
           className="flex items-center justify-center cursor-pointer relative select-none transition-all duration-300"
