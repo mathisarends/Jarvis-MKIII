@@ -1,9 +1,9 @@
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from "react-router-dom";
-import HomeScreen from "./features/homeScreen";
-import AlarmScreen from "./features/alarmScreen";
-import NavbarComponent from "./components/Navbar";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import HeaderWrapper from "./components/HeaderWrapper";
 import AppLayout from "./layout/app-layout";
+import NavbarComponent from "./layout/Navbar";
+
+import { routes } from "./config/routeConfig";
 
 function App() {
   return (
@@ -11,35 +11,15 @@ function App() {
       <HeaderWrapper />
       <AppLayout>
         <Routes>
-          <Route path="/" element={<HomeScreen />} />
-          <Route path="/alarm" element={<AlarmScreen />} />
-          {/* ... */}
+          {routes.map((route) => (
+            <Route key={route.path} path={route.path} element={route.element} />
+          ))}
         </Routes>
       </AppLayout>
 
-      <NavbarComponentWithRouter />
+      <NavbarComponent />
     </Router>
   );
 }
-
-const NavbarComponentWithRouter = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const getActiveRoute = () => {
-    const path = location.pathname;
-    if (path === "/") {
-      return "/home";
-    }
-    return path;
-  };
-
-  const handleNavigation = (route: string) => {
-    const targetRoute = route === "/home" ? "/" : route;
-    navigate(targetRoute);
-  };
-
-  return <NavbarComponent activeRoute={getActiveRoute()} onNavItemClick={handleNavigation} />;
-};
 
 export default App;

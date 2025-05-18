@@ -1,42 +1,21 @@
+// src/components/HeaderWrapper.tsx
+import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import Header from "./Header";
+import { getRouteByPath } from "../config/routeConfig";
+import Header from "../layout/Header";
 
-export const useHeaderService = () => {
+const HeaderWrapper: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Titel basierend auf Route
-  const getTitle = () => {
-    switch (location.pathname) {
-      case "/":
-        return "Home";
-      case "/alarm":
-        return "Alarm Clock";
-      case "/stats":
-        return "Statistik";
-      case "/profile":
-        return "Profil";
-      default:
-        return "Jarvis";
-    }
-  };
+  const currentRoute = getRouteByPath(location.pathname);
 
   const handleBack = () => {
     navigate(-1);
   };
 
-  return {
-    title: getTitle(),
-    onBackClick: handleBack,
-  };
-};
-
-const HeaderWrapper = () => {
-  const headerService = useHeaderService();
-
   const profilePicture = "https://i.pravatar.cc/150?img=3";
 
-  return <Header title={headerService.title} onBackClick={headerService.onBackClick} profilePicture={profilePicture} />;
+  return <Header title={currentRoute.title} onBackClick={handleBack} profilePicture={profilePicture} />;
 };
 
 export default HeaderWrapper;

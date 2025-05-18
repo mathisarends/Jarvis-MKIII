@@ -1,8 +1,6 @@
 import React from "react";
 import { ChevronLeft, User } from "lucide-react";
 
-// Jeder Header sollte hier entweder das Profile anzeigen oder einfach nur ein Button der hier vordefiniert ist.
-// Will ich hier auch gerne über einen Service nutzen gerne
 interface HeaderProps {
   title?: string;
   onBackClick?: () => void;
@@ -16,7 +14,7 @@ const Header: React.FC<HeaderProps> = ({ title = "", onBackClick, profilePicture
         {onBackClick && (
           <button
             onClick={onBackClick}
-            className="w-9 h-9 bg-gray-100 rounded-full grid place-items-center text-gray-500 hover:text-gray-700 hover:bg-gray-200 transition-colors"
+            className="w-8 h-8 bg-gray-100 rounded-full grid place-items-center text-gray-500 hover:text-gray-700 hover:bg-gray-200 transition-colors"
           >
             <ChevronLeft size={22} />
           </button>

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import SleepScheduleItem from "../components/SleepScheduleItem";
 
+// Hier ein Grid draus machen und das Erstellen von einem neune Alarm erlauben
 const AlarmScreen: React.FC = () => {
   const [alarms, setAlarms] = useState([
     { id: 1, time: "23:15", isEnabled: true },

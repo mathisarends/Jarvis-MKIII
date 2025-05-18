@@ -5,7 +5,7 @@ import ConfigScreen from "../features/configScreen";
 
 export interface RouteConfig {
   path: string;
-  element: React.ComponentType;
+  element: React.ReactNode;
   title: string;
   navPath?: string;
   showInNavbar?: boolean;
@@ -15,7 +15,7 @@ export interface RouteConfig {
 export const routes: RouteConfig[] = [
   {
     path: "/",
-    element: HomeScreen,
+    element: <HomeScreen />,
     title: "Home",
     navPath: "/home",
     showInNavbar: true,
@@ -23,15 +23,15 @@ export const routes: RouteConfig[] = [
   },
   {
     path: "/alarm",
-    element: AlarmScreen,
+    element: <AlarmScreen />,
     title: "Alarm Clock",
     showInNavbar: true,
     icon: "alarm-icon",
   },
   {
     path: "/config",
-    element: ConfigScreen,
-    title: "Statistik",
+    element: <ConfigScreen />,
+    title: "Konfiguration",
     showInNavbar: true,
     icon: "settings-icon",
   },
