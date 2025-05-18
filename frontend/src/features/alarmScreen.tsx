@@ -1,12 +1,28 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { Plus } from "lucide-react";
 import SleepScheduleItem from "../components/SleepScheduleItem";
+import { useHeader } from "../contexts/headerContext"; // Import the header context hook
 
-// Hier ein Grid draus machen und das Erstellen von einem neune Alarm erlauben
 const AlarmScreen: React.FC = () => {
+  // Get header context functions
+  const { updateConfig, resetConfig } = useHeader();
+
   const [alarms, setAlarms] = useState([
     { id: 1, time: "23:15", isEnabled: true },
     { id: 2, time: "07:30", isEnabled: false },
   ]);
+
+  useEffect(() => {
+    updateConfig({
+      rightElement: "button",
+      buttonIcon: Plus,
+      buttonCallback: handleAddAlarm,
+    });
+
+    return () => {
+      resetConfig();
+    };
+  }, [updateConfig, resetConfig]);
 
   const handleToggleAlarm = (id: number) => {
     setAlarms((prevAlarms) =>
@@ -14,8 +30,20 @@ const AlarmScreen: React.FC = () => {
     );
   };
 
+  const handleAddAlarm = () => {
+    const newId = Math.max(0, ...alarms.map((alarm) => alarm.id)) + 1;
+
+    const newAlarm = {
+      id: newId,
+      time: "08:00",
+      isEnabled: true,
+    };
+
+    setAlarms([...alarms, newAlarm]);
+  };
+
   return (
-    <div>
+    <div className="relative">
       {/* Bestehende Alarme */}
       <div className="space-y-2">
         {alarms.map((alarm) => (
@@ -28,11 +56,6 @@ const AlarmScreen: React.FC = () => {
           />
         ))}
       </div>
-
-      {/* Anzeige, wenn keine Alarme vorhanden sind */}
-      {alarms.length === 0 && (
-        <div className="text-center py-8 text-gray-500">Keine Alarme eingerichtet. Erstelle deinen ersten Alarm!</div>
-      )}
     </div>
   );
 };

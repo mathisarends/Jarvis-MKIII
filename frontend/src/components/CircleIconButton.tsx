@@ -1,9 +1,7 @@
 import React from "react";
-import type { LucideIcon } from "lucide-react";
 
 interface CircleIconButtonProps {
-  icon: LucideIcon;
-
+  icon: React.ElementType;
   onClick: () => void;
 }
 

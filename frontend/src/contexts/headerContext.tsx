@@ -1,12 +1,9 @@
-import React, { createContext, useContext, useState } from "react";
-import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 
 interface HeaderConfig {
   rightElement: "profile" | "button";
-  buttonIcon?: LucideIcon;
+  buttonIcon?: React.ElementType;
   buttonCallback?: () => void;
-  buttonLabel?: string;
 }
 
 interface HeaderContextType {
@@ -21,18 +18,27 @@ const defaultConfig: HeaderConfig = {
 
 const HeaderContext = createContext<HeaderContextType | undefined>(undefined);
 
-export const HeaderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const HeaderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<HeaderConfig>(defaultConfig);
 
-  const updateConfig = (newConfig: Partial<HeaderConfig>) => {
+  const updateConfig = useCallback((newConfig: Partial<HeaderConfig>) => {
     setConfig((prevConfig) => ({ ...prevConfig, ...newConfig }));
-  };
+  }, []);
 
-  const resetConfig = () => {
+  const resetConfig = useCallback(() => {
     setConfig(defaultConfig);
-  };
+  }, []);
 
-  return <HeaderContext.Provider value={{ config, updateConfig, resetConfig }}>{children}</HeaderContext.Provider>;
+  const value = React.useMemo(
+    () => ({
+      config,
+      updateConfig,
+      resetConfig,
+    }),
+    [config, updateConfig, resetConfig]
+  );
+
+  return <HeaderContext.Provider value={value}>{children}</HeaderContext.Provider>;
 };
 
 export const useHeader = () => {
