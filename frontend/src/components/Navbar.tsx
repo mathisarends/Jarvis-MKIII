@@ -45,7 +45,7 @@ const NavbarComponent: React.FC<NavbarComponentProps> = ({ activeRoute, onNavIte
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   return (
-    <div
+    <nav
       className="
       fixed 
       left-0 right-0 bottom-0 
@@ -67,7 +67,7 @@ const NavbarComponent: React.FC<NavbarComponentProps> = ({ activeRoute, onNavIte
           {renderIcon(item.icon, activeRoute === item.route, hoveredIdx === idx)}
         </div>
       ))}
-    </div>
+    </nav>
   );
 };
 

@@ -3,34 +3,21 @@ import HomeScreen from "./features/homeScreen";
 import AlarmScreen from "./features/alarmScreen";
 import NavbarComponent from "./components/Navbar";
 import HeaderWrapper from "./components/HeaderWrapper";
-import Layout from "./layout/layout";
+import AppLayout from "./layout/app-layout";
 
 function App() {
   return (
     <Router>
-      <div className="max-w-13xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <HeaderWrapper />
+      <HeaderWrapper />
+      <AppLayout>
         <Routes>
-          <Route
-            path="/"
-            element={
-              <Layout>
-                <HomeScreen />
-              </Layout>
-            }
-          />
-          <Route
-            path="/alarm"
-            element={
-              <Layout>
-                <AlarmScreen />
-              </Layout>
-            }
-          />
-          {/* ...weitere Screens */}
+          <Route path="/" element={<HomeScreen />} />
+          <Route path="/alarm" element={<AlarmScreen />} />
+          {/* ... */}
         </Routes>
-        <NavbarComponentWithRouter />
-      </div>
+      </AppLayout>
+
+      <NavbarComponentWithRouter />
     </Router>
   );
 }
