@@ -19,6 +19,11 @@ const AlarmScreen: React.FC = () => {
     );
   };
 
+  const handleDeleteAlarm = (id: number) => {
+    // Filter out the alarm with the matching id
+    setAlarms((prevAlarms) => prevAlarms.filter((alarm) => alarm.id !== id));
+  };
+
   const openModal = useCallback(() => {
     setIsModalOpen(true);
   }, []);
@@ -50,13 +55,14 @@ const AlarmScreen: React.FC = () => {
   return (
     <div>
       {/* Grid Layout for Alarms */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
         {alarms.map((alarm) => (
           <SleepScheduleItem
             key={alarm.id}
             time={alarm.time}
             isEnabled={alarm.isEnabled}
             onToggle={() => handleToggleAlarm(alarm.id)}
+            onDelete={() => handleDeleteAlarm(alarm.id)}
           />
         ))}
       </div>

@@ -2,7 +2,7 @@ import React from "react";
 
 interface CircleIconButtonProps {
   icon: React.ElementType;
-  onClick: () => void;
+  onClick: (e?: React.MouseEvent) => void;
 }
 
 const CircleIconButton: React.FC<CircleIconButtonProps> = ({ icon: Icon, onClick }) => {

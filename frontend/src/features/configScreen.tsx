@@ -38,7 +38,6 @@ const ConfigScreen: React.FC = () => {
     <div className="flex flex-col gap-0">
       {/* Sliders */}
       <div className="space-y-3 mb-8">
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">Alarm Settings</h2>
         <BrightnessSlider />
         <VolumeSlider />
       </div>
@@ -51,6 +50,8 @@ const ConfigScreen: React.FC = () => {
         selectedSound={selectedWakeUpSound}
         onSoundChange={setSelectedWakeUpSound}
       />
+
+      <div className="border-t border-gray-200 my-6"></div>
 
       <SoundSelector
         category="get-up"
