@@ -24,7 +24,7 @@ export const routes: RouteConfig[] = [
   {
     path: "/alarm",
     element: <AlarmScreen />,
-    title: "Alarm Clock",
+    title: "Wecker",
     showInNavbar: true,
     icon: "alarm-icon",
   },
