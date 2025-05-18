@@ -1,28 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import SleepScheduleItem from "../components/SleepScheduleItem";
-import { useHeader } from "../contexts/headerContext"; // Import the header context hook
+import { useHeader } from "../contexts/headerContext";
+import TimePickerModal from "../components/TimePickerModal";
 
 const AlarmScreen: React.FC = () => {
-  // Get header context functions
   const { updateConfig, resetConfig } = useHeader();
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [alarms, setAlarms] = useState([
     { id: 1, time: "23:15", isEnabled: true },
     { id: 2, time: "07:30", isEnabled: false },
   ]);
-
-  useEffect(() => {
-    updateConfig({
-      rightElement: "button",
-      buttonIcon: Plus,
-      buttonCallback: handleAddAlarm,
-    });
-
-    return () => {
-      resetConfig();
-    };
-  }, [updateConfig, resetConfig]);
 
   const handleToggleAlarm = (id: number) => {
     setAlarms((prevAlarms) =>
@@ -30,21 +19,37 @@ const AlarmScreen: React.FC = () => {
     );
   };
 
-  const handleAddAlarm = () => {
+  const openModal = useCallback(() => {
+    setIsModalOpen(true);
+  }, []);
+
+  const handleAddAlarm = (time: string) => {
     const newId = Math.max(0, ...alarms.map((alarm) => alarm.id)) + 1;
 
     const newAlarm = {
       id: newId,
-      time: "08:00",
+      time: time,
       isEnabled: true,
     };
 
     setAlarms([...alarms, newAlarm]);
   };
 
+  useEffect(() => {
+    updateConfig({
+      rightElement: "button",
+      buttonIcon: Plus,
+      buttonCallback: openModal,
+    });
+
+    return () => {
+      resetConfig();
+    };
+  }, [updateConfig, resetConfig, openModal]);
+
   return (
     <div className="relative">
-      {/* Bestehende Alarme */}
+      {/* Alarm List */}
       <div className="space-y-2">
         {alarms.map((alarm) => (
           <SleepScheduleItem
@@ -56,6 +61,8 @@ const AlarmScreen: React.FC = () => {
           />
         ))}
       </div>
+
+      <TimePickerModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleAddAlarm} />
     </div>
   );
 };
