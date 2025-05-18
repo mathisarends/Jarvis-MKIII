@@ -1,46 +1,34 @@
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import HomeScreen from "./features/homeScreen";
 import AlarmScreen from "./features/alarmScreen";
-import HeaderComponent from "./components/headerComponent";
-import NavbarComponent from "./components/navbarComponent";
-
-const HeaderWrapper = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const getTitle = () => {
-    switch (location.pathname) {
-      case "/":
-        return "Home";
-      case "/alarm":
-        return "Wecker";
-      case "/stats":
-        return "Statistik";
-      case "/profile":
-        return "Profil";
-      default:
-        return "Jarvis";
-    }
-  };
-
-  const handleBack = () => {
-    navigate(-1);
-  };
-
-  return <HeaderComponent title={getTitle()} onBackClick={handleBack} />;
-};
+import NavbarComponent from "./components/Navbar";
+import HeaderWrapper from "./components/HeaderWrapper";
+import Layout from "./layout/layout";
 
 function App() {
   return (
     <Router>
       <div className="max-w-13xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         <HeaderWrapper />
-
         <Routes>
-          <Route path="/" element={<HomeScreen />} />
-          <Route path="/alarm" element={<AlarmScreen />} />
+          <Route
+            path="/"
+            element={
+              <Layout>
+                <HomeScreen />
+              </Layout>
+            }
+          />
+          <Route
+            path="/alarm"
+            element={
+              <Layout>
+                <AlarmScreen />
+              </Layout>
+            }
+          />
+          {/* ...weitere Screens */}
         </Routes>
-
         <NavbarComponentWithRouter />
       </div>
     </Router>

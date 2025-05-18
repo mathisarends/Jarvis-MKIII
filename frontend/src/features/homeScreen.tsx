@@ -3,7 +3,7 @@ import React from "react";
 const HomeScreen: React.FC = () => {
   return (
     <div className="pt-16 pb-20 px-4">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Schlaf screen</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Schlaf scre</h2>
       <div className="bg-white rounded-xl p-4 shadow-md">
         <p className="text-gray-700">Willkommen bei Jarvis, deinem persönlichen Schlaf-Assistenten.</p>
 

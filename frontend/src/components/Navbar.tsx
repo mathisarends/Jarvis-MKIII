@@ -50,7 +50,7 @@ const NavbarComponent: React.FC<NavbarComponentProps> = ({ activeRoute, onNavIte
       fixed 
       left-0 right-0 bottom-0 
       w-full py-3 bg-[#1A202C] flex items-center justify-between px-5 shadow-xl z-[1045]
-      md:bottom-10 
+      md:bottom-7
       md:left-1/2 md:right-auto md:translate-x-[-50%]
       md:w-[92%] md:max-w-[500px] md:rounded-3xl md:px-8
       mx-auto
