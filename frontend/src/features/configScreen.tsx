@@ -43,23 +43,27 @@ const ConfigScreen: React.FC = () => {
       </div>
 
       {/* Sound Selectors */}
-      <SoundSelector
-        category="wake-up"
-        title="Wake Up Sounds"
-        sounds={wakeUpSounds}
-        selectedSound={selectedWakeUpSound}
-        onSoundChange={setSelectedWakeUpSound}
-      />
+      <div className="flex flex-col md:flex-row gap-6 w-full">
+        <div className="flex-1">
+          <SoundSelector
+            category="wake-up"
+            title="Wake Up Sounds"
+            sounds={wakeUpSounds}
+            selectedSound={selectedWakeUpSound}
+            onSoundChange={setSelectedWakeUpSound}
+          />
+        </div>
 
-      <div className="border-t border-gray-200 my-6"></div>
-
-      <SoundSelector
-        category="get-up"
-        title="Get Up Sounds"
-        sounds={getUpSounds}
-        selectedSound={selectedGetUpSound}
-        onSoundChange={setSelectedGetUpSound}
-      />
+        <div className="flex-1">
+          <SoundSelector
+            category="get-up"
+            title="Get Up Sounds"
+            sounds={getUpSounds}
+            selectedSound={selectedGetUpSound}
+            onSoundChange={setSelectedGetUpSound}
+          />
+        </div>
+      </div>
     </div>
   );
 };

@@ -9,11 +9,7 @@ interface HeaderProps {
   profilePicture?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({
-  title = "",
-  onBackClick,
-  profilePicture = "https://i.pravatar.cc/150?img=3",
-}) => {
+const Header: React.FC<HeaderProps> = ({ title = "", onBackClick, profilePicture = "/images/profile_picture.png" }) => {
   const { config } = useHeader();
 
   // Render the right element based on the config

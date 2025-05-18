@@ -1,15 +1,16 @@
-import uvicorn
 import os
+import re
+from datetime import datetime, time, timedelta
+from typing import Optional
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime, time, timedelta
-import re
 
-from plugins.alarm.daylight_alarm import AlarmSystem
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.py_audio_player import PyAudioPlayer
+from plugins.alarm.daylight_alarm import AlarmSystem
 
 # Initialize audio system
 AudioPlayerFactory.initialize_with(PyAudioPlayer)

@@ -5,11 +5,11 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     className="
       w-full 
       px-[3.25%] 
-      pt-20
+      py-20
       pb-16 
       min-h-[calc(100vh-4rem)] 
       sm:px-[7.5%] 
-      sm:pt-24
+      sm:py-24
       "
   >
     {children}

@@ -29,15 +29,7 @@ interface SoundOptionProps {
   style?: React.CSSProperties;
 }
 
-const SoundOption: React.FC<SoundOptionProps> = ({
-  soundName,
-  soundFile,
-  isSelected,
-  onSelect,
-  category,
-  animationDelay,
-  style,
-}) => {
+const SoundOption: React.FC<SoundOptionProps> = ({ soundName, soundFile, isSelected, onSelect, category, style }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -136,7 +128,7 @@ export const SoundSelector: React.FC<{
   selectedSound: string;
   onSoundChange: (sound: string) => void;
 }> = ({ category, title, sounds, selectedSound, onSoundChange }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
 
   // Toggle expanded state with animation handling
