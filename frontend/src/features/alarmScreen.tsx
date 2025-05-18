@@ -48,19 +48,31 @@ const AlarmScreen: React.FC = () => {
   }, [updateConfig, resetConfig, openModal]);
 
   return (
-    <div className="relative">
-      {/* Alarm List */}
-      <div className="space-y-2">
+    <div>
+      {/* Grid Layout for Alarms */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl">
         {alarms.map((alarm) => (
           <SleepScheduleItem
             key={alarm.id}
             time={alarm.time}
-            timeFromNow={`${alarm.id === 1 ? "4h 25m" : "8h 40m"} from now`}
             isEnabled={alarm.isEnabled}
             onToggle={() => handleToggleAlarm(alarm.id)}
           />
         ))}
       </div>
+
+      {/* Empty state */}
+      {alarms.length === 0 && (
+        <div className="text-center py-16 px-4">
+          <div className="bg-gray-50 rounded-lg p-8 max-w-md mx-auto shadow-sm">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Plus className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">Keine Alarme eingerichtet</h3>
+            <p className="text-gray-500">Erstelle deinen ersten Alarm mit dem Plus-Button!</p>
+          </div>
+        </div>
+      )}
 
       <TimePickerModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleAddAlarm} />
     </div>

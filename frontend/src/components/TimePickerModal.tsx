@@ -32,7 +32,9 @@ const TimePickerModal: React.FC<{
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16">
