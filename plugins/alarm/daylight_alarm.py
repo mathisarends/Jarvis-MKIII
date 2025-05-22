@@ -7,11 +7,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from core.audio.audio_player_factory import AudioPlayerFactory
-from plugins.alarm.alarm_sound_manager import (
-    AlarmSoundManager,
-    SoundCategory,
-    SoundOption,
-)
+from plugins.alarm.alarm_sound_manager import AlarmSoundManager
 from plugins.alarm.sunrise_controller import SunriseConfig, SunriseController
 from shared.logging_mixin import LoggingMixin
 from shared.singleton_meta_class import SingletonMetaClass
@@ -419,15 +415,3 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
         self._alarm_manager.cancel_alarm(alarm_id)
         self._active_alarms.discard(alarm_id)
         self.logger.info(f"Alarm '{alarm_id}' successfully canceled")
-
-    def get_active_alarms(self) -> Set[str]:
-        """Get all active alarm IDs."""
-        return self._active_alarms.copy()
-
-    def has_active_alarms(self) -> bool:
-        """Check if there are any active alarms."""
-        return len(self._active_alarms) > 0
-
-    def get_alarm_count(self) -> int:
-        """Get the number of active alarms."""
-        return len(self._active_alarms)

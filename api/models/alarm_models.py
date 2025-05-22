@@ -94,3 +94,23 @@ class VolumeRequest(BaseModel):
 
 class SoundRequest(BaseModel):
     sound_id: str = Field(..., min_length=1, description="Sound ID")
+
+
+class CreateAlarmRequest(BaseModel):
+    """Request model for creating an alarm"""
+    alarm_id: str = Field(..., min_length=1, max_length=50, description="Unique identifier for the alarm")
+    time: str = Field(..., description="Time in HH:MM format or +X for X seconds from now")
+
+
+class CreateAlarmResponse(BaseModel):
+    """Response model for creating an alarm"""
+    message: str
+    alarm_id: str
+    time: str
+    settings_used: dict
+
+
+class CancelAlarmResponse(BaseModel):
+    """Response model for canceling an alarm"""
+    message: str
+    alarm_id: str

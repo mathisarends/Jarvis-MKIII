@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends
 from pydantic import Field
 
 from api.models.alarm_models import (AlarmOptions, BrightnessRequest,
-                                     PlaySoundResponse, SoundRequest,
-                                     StopSoundResponse, VolumeRequest)
+                                     CancelAlarmResponse, CreateAlarmRequest,
+                                     CreateAlarmResponse, PlaySoundResponse,
+                                     SoundRequest, StopSoundResponse,
+                                     VolumeRequest)
 from api.services.alarm_service import AlarmService
 
 router = APIRouter()
@@ -76,3 +78,21 @@ def set_get_up_sound(
 ):
     """Set the global get-up sound for all alarms"""
     return service.set_get_up_sound(request.sound_id)
+
+
+@router.post("/alarms", response_model=CreateAlarmResponse)
+def create_alarm(
+    request: CreateAlarmRequest,
+    service: AlarmService = Depends(get_alarm_service)
+):
+    """Create a new alarm with the specified time"""
+    return service.create_alarm(request.alarm_id, request.time)
+
+
+@router.delete("/alarms/{alarm_id}", response_model=CancelAlarmResponse)
+def cancel_alarm(
+    alarm_id: str,
+    service: AlarmService = Depends(get_alarm_service)
+):
+    """Cancel an existing alarm by its ID"""
+    return service.cancel_alarm(alarm_id)
