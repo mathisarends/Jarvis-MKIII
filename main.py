@@ -17,17 +17,17 @@ from shared.logging_mixin import setup_logging
 async def main():
     """Main entry point for the voice assistant application"""
     load_dotenv()
-    
+
     if not os.getenv("OPENAI_API_KEY"):
         print("Error: OPENAI_API_KEY not found in .env file")
         return
-    
+
     print("Starting voice assistant...")
-    
+
     AudioPlayerFactory.initialize_with(SonosPlayer)
-    
+
     await LightController.create()
-    
+
     try:
         voice_assistant = VoiceAssistantController(
             wake_word="picovoice", sensitivity=0.7
@@ -39,11 +39,12 @@ async def main():
         await voice_assistant.stop()
         print("Application terminated")
 
+
 if __name__ == "__main__":
     print("🎙️  Voice Assistant with Wake Word Detection")
     print("   Say the wake word to start a conversation")
     print("   Press Ctrl+C to exit")
-    
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

@@ -1,48 +1,94 @@
 import React, { useState, useEffect } from "react";
 import { BrightnessSlider, VolumeSlider } from "../components/Slider";
-import { SoundSelector } from "../components/SoundSelector"; // Provider importieren
-import type { AlarmOptions } from "../types";
-import { alarmApi } from "../api/alarmApi";
+import { SoundSelector } from "../components/SoundSelector";
 import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
+import type { AlarmOptions } from "../types";
+import { alarmApi, settingsApi } from "../api/alarmApi";
 
 const ConfigScreen: React.FC = () => {
-  // State für die geladenen Alarm-Optionen
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // State für ausgewählte Sounds - verwende IDs statt Dateinamen
-  const [selectedWakeUpSound, setSelectedWakeUpSound] = useState<string>("");
-  const [selectedGetUpSound, setSelectedGetUpSound] = useState<string>("");
+  const [globalSettings, setGlobalSettings] = useState({
+    brightness: 100,
+    volume: 0.5,
+    wakeUpSound: "",
+    getUpSound: "",
+  });
 
-  // Lade Alarm-Optionen beim Component Mount
   useEffect(() => {
-    const loadAlarmOptions = async () => {
+    const loadData = async () => {
       try {
         setLoading(true);
         setError(null);
-        const options = await alarmApi.getOptions();
-        setAlarmOptions(options);
 
-        // Setze Default-Werte, falls verfügbar
-        if (options.wake_up_sounds.length > 0) {
-          setSelectedWakeUpSound(options.wake_up_sounds[0].id);
-        }
-        if (options.get_up_sounds.length > 0) {
-          setSelectedGetUpSound(options.get_up_sounds[0].id);
-        }
+        // ✅ Parallel loading mit beiden APIs
+        const [options, settings] = await Promise.all([alarmApi.getOptions(), settingsApi.getGlobal()]);
+
+        setAlarmOptions(options);
+        setGlobalSettings({
+          brightness: settings.max_brightness,
+          volume: settings.volume,
+          wakeUpSound: settings.wake_up_sound_id,
+          getUpSound: settings.get_up_sound_id,
+        });
       } catch (err) {
-        setError("Fehler beim Laden der Alarm-Optionen");
-        console.error("Error loading alarm options:", err);
+        setError("Fehler beim Laden der Daten");
+        console.error("Error loading data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    loadAlarmOptions();
+    loadData();
   }, []);
 
-  // Loading State
+  const onBrightnessChangeEnd = async (value: number) => {
+    try {
+      await settingsApi.setBrightness(value);
+      setGlobalSettings((prev) => ({ ...prev, brightness: value }));
+    } catch (error) {
+      console.error("❌ Failed to save brightness:", error);
+    }
+  };
+
+  const onVolumeChangeEnd = async (value: number) => {
+    try {
+      await settingsApi.setVolume(value);
+      setGlobalSettings((prev) => ({ ...prev, volume: value }));
+    } catch (error) {
+      console.error("❌ Failed to save volume:", error);
+    }
+  };
+
+  const onWakeUpSoundChange = async (soundId: string) => {
+    try {
+      await settingsApi.setWakeUpSound(soundId);
+      setGlobalSettings((prev) => ({ ...prev, wakeUpSound: soundId }));
+    } catch (error) {
+      console.error("❌ Failed to save wake-up sound:", error);
+    }
+  };
+
+  const onGetUpSoundChange = async (soundId: string) => {
+    try {
+      await settingsApi.setGetUpSound(soundId);
+      setGlobalSettings((prev) => ({ ...prev, getUpSound: soundId }));
+    } catch (error) {
+      console.error("❌ Failed to save get-up sound:", error);
+    }
+  };
+
+  // Live updates (für smooth UX)
+  const onBrightnessChange = (value: number) => {
+    setGlobalSettings((prev) => ({ ...prev, brightness: value }));
+  };
+
+  const onVolumeChange = (value: number) => {
+    setGlobalSettings((prev) => ({ ...prev, volume: value }));
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-0">
@@ -56,7 +102,6 @@ const ConfigScreen: React.FC = () => {
     );
   }
 
-  // Error State
   if (error || !alarmOptions) {
     return (
       <div className="flex flex-col gap-0">
@@ -77,37 +122,36 @@ const ConfigScreen: React.FC = () => {
 
   return (
     <SoundPlaybackProvider>
-      {" "}
-      {/* 🔥 Provider wrapper für globalen Sound State */}
-      <div className="flex flex-col gap-0">
-        {/* Sliders */}
-        <div className="space-y-3 mb-8">
-          <BrightnessSlider
-            min={alarmOptions.brightness_range.min}
-            max={alarmOptions.brightness_range.max}
-            defaultValue={alarmOptions.brightness_range.default}
-          />
-          <VolumeSlider
-            min={alarmOptions.volume_range.min}
-            max={alarmOptions.volume_range.max}
-            defaultValue={alarmOptions.volume_range.default}
-          />
-        </div>
+      <div className="flex flex-col gap-5">
+        <BrightnessSlider
+          min={alarmOptions.brightness_range.min}
+          max={alarmOptions.brightness_range.max}
+          value={globalSettings.brightness}
+          onChange={onBrightnessChange}
+          onChangeEnd={onBrightnessChangeEnd}
+        />
+        <VolumeSlider
+          min={alarmOptions.volume_range.min}
+          max={alarmOptions.volume_range.max}
+          value={globalSettings.volume}
+          onChange={onVolumeChange}
+          onChangeEnd={onVolumeChangeEnd}
+        />
 
         {/* Sound Selectors */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
           <SoundSelector
             title="Wake Up Sounds"
             sounds={alarmOptions.wake_up_sounds}
-            selectedSound={selectedWakeUpSound}
-            onSoundChange={setSelectedWakeUpSound}
+            selectedSound={globalSettings.wakeUpSound}
+            onSoundChange={onWakeUpSoundChange}
           />
 
           <SoundSelector
             title="Get Up Sounds"
             sounds={alarmOptions.get_up_sounds}
-            selectedSound={selectedGetUpSound}
-            onSoundChange={setSelectedGetUpSound}
+            selectedSound={globalSettings.getUpSound}
+            onSoundChange={onGetUpSoundChange}
           />
         </div>
       </div>

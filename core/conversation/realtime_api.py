@@ -4,16 +4,20 @@ from typing import Any, Dict, List
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.microphone import PyAudioMicrophone
 from core.audio.response_audio_handler import ResponseAudioHandler
-from core.conversation.conversation_session_manager import \
-    ConversationSessionManager
+from core.conversation.conversation_session_manager import ConversationSessionManager
 from core.conversation.event_router import EventRouter
 from core.conversation.realtime_tool_handler import RealtimeToolHandler
 from core.websocket.websocket_manager import WebSocketManager
 from plugins.notion.clipboard.clipboard_tool import clipboard_tool
 from plugins.tool_registry import ToolRegistry
 from plugins.weather.weather_tool import get_weather
-from resources.config import (OPENAI_HEADERS, OPENAI_WEBSOCKET_URL,
-                              SYSTEM_MESSAGE, TEMPERATURE, VOICE)
+from resources.config import (
+    OPENAI_HEADERS,
+    OPENAI_WEBSOCKET_URL,
+    SYSTEM_MESSAGE,
+    TEMPERATURE,
+    VOICE,
+)
 from shared.event_bus import EventBus
 from shared.logging_mixin import LoggingMixin
 
@@ -63,9 +67,9 @@ class OpenAIRealtimeAPI(LoggingMixin):
         Initializes the tool registry and registers all available tools.
         """
         try:
-            """ self.tool_registry.register_tool(stop_conversation_tool) """
+            """self.tool_registry.register_tool(stop_conversation_tool)"""
             """ self.tool_registry.register_tool(web_search_tool) """
-        
+
             self.tool_registry.register_tool(get_weather)
             self.tool_registry.register_tool(
                 tool=clipboard_tool,

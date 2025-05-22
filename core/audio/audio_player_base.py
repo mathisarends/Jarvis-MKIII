@@ -25,7 +25,7 @@ class AudioPlayer(ABC, LoggingMixin):
     @abstractmethod
     def stop(self):
         """Stop the audio player and clean up resources"""
-        
+
     @abstractmethod
     def stop_sound(self):
         """Stop the currently playing sound"""
@@ -35,11 +35,11 @@ class AudioPlayer(ABC, LoggingMixin):
     def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
         """
         Play a sound file by name.
-        
+
         Args:
             sound_name: Name of the sound file (with or without .mp3 extension)
             volume: Optional volume override (0.0 to 1.0). If None, uses the player's current volume.
-            
+
         Returns:
             True if playback started successfully, False otherwise
         """

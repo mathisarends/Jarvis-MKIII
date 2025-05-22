@@ -206,6 +206,7 @@ class SunriseController(LoggingMixin, metaclass=SingletonMetaClass):
 
             self.logger.error(traceback.format_exc())
 
+
 if __name__ == "__main__":
     config = SunriseConfig(
         scene_name="Majestätischer Morgen",

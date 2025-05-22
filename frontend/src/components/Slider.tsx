@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Volume2, Sun } from "lucide-react";
 
 interface SliderProps {
   value: number;
   onChange: (value: number) => void;
+  onChangeEnd?: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -12,8 +13,53 @@ interface SliderProps {
   valueLabel?: string;
 }
 
-const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, step = 1, icon, label, valueLabel }) => {
+const Slider: React.FC<SliderProps> = ({
+  value,
+  onChange,
+  onChangeEnd,
+  min = 0,
+  max = 100,
+  step = 1,
+  icon,
+  label,
+  valueLabel,
+}) => {
   const percentage = ((value - min) / (max - min)) * 100;
+  const isDragging = useRef(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = Number(e.target.value);
+    onChange(newValue); // ✅ Für visuelle Updates während dem Ziehen
+  };
+
+  const handlePointerDown = () => {
+    isDragging.current = true;
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLInputElement>) => {
+    if (isDragging.current) {
+      isDragging.current = false;
+      const newValue = Number((e.target as HTMLInputElement).value);
+      onChangeEnd?.(newValue); // ✅ Nur beim Loslassen
+    }
+  };
+
+  // Fallback für ältere Browser / Touch
+  const handleMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (isDragging.current) {
+      isDragging.current = false;
+      const newValue = Number((e.target as HTMLInputElement).value);
+      onChangeEnd?.(newValue);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLInputElement>) => {
+    if (isDragging.current) {
+      isDragging.current = false;
+      const newValue = Number((e.target as HTMLInputElement).value);
+      onChangeEnd?.(newValue);
+    }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border-l-4 border-l-teal-500 overflow-hidden">
@@ -40,7 +86,11 @@ const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, st
               max={max}
               step={step}
               value={value}
-              onChange={(e) => onChange(Number(e.target.value))}
+              onChange={handleChange}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onMouseUp={handleMouseUp}
+              onTouchEnd={handleTouchEnd}
               className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
             />
           </div>
@@ -54,13 +104,13 @@ const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, st
   );
 };
 
-// Brightness Slider Component Props
 interface BrightnessSliderProps {
   min?: number;
   max?: number;
   defaultValue?: number;
   value?: number;
   onChange?: (value: number) => void;
+  onChangeEnd?: (value: number) => void;
 }
 
 export const BrightnessSlider: React.FC<BrightnessSliderProps> = ({
@@ -69,6 +119,7 @@ export const BrightnessSlider: React.FC<BrightnessSliderProps> = ({
   defaultValue = 70,
   value: controlledValue,
   onChange: controlledOnChange,
+  onChangeEnd: controlledOnChangeEnd,
 }) => {
   const [internalBrightness, setInternalBrightness] = useState(defaultValue);
 
@@ -83,10 +134,16 @@ export const BrightnessSlider: React.FC<BrightnessSliderProps> = ({
     return "Dim";
   };
 
+  const handleChangeEnd = (value: number) => {
+    console.log(`🔆 Brightness changed to: ${value}`);
+    controlledOnChangeEnd?.(value);
+  };
+
   return (
     <Slider
       value={brightness}
       onChange={handleChange}
+      onChangeEnd={handleChangeEnd}
       min={min}
       max={max}
       step={max <= 1 ? 0.01 : 1}
@@ -104,6 +161,7 @@ interface VolumeSliderProps {
   defaultValue?: number;
   value?: number;
   onChange?: (value: number) => void;
+  onChangeEnd?: (value: number) => void;
 }
 
 export const VolumeSlider: React.FC<VolumeSliderProps> = ({
@@ -112,10 +170,10 @@ export const VolumeSlider: React.FC<VolumeSliderProps> = ({
   defaultValue = 50,
   value: controlledValue,
   onChange: controlledOnChange,
+  onChangeEnd: controlledOnChangeEnd,
 }) => {
   const [internalVolume, setInternalVolume] = useState(defaultValue);
 
-  // Use controlled value if provided, otherwise use internal state
   const volume = controlledValue !== undefined ? controlledValue : internalVolume;
   const handleChange = controlledOnChange || setInternalVolume;
 
@@ -127,10 +185,16 @@ export const VolumeSlider: React.FC<VolumeSliderProps> = ({
     return "Loud";
   };
 
+  const handleChangeEnd = (value: number) => {
+    console.log(`🔊 Volume changed to: ${value}`);
+    controlledOnChangeEnd?.(value);
+  };
+
   return (
     <Slider
       value={volume}
       onChange={handleChange}
+      onChangeEnd={handleChangeEnd}
       min={min}
       max={max}
       step={max <= 1 ? 0.01 : 1}
