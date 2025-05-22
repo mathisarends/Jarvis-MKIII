@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { BrightnessSlider, VolumeSlider } from "../components/Slider";
-import { SoundSelector, SoundPlaybackProvider } from "../components/SoundSelector"; // Provider importieren
+import { SoundSelector } from "../components/SoundSelector"; // Provider importieren
 import type { AlarmOptions } from "../types";
 import { alarmApi } from "../api/alarmApi";
+import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
 
 const ConfigScreen: React.FC = () => {
   // State für die geladenen Alarm-Optionen
@@ -94,26 +95,20 @@ const ConfigScreen: React.FC = () => {
         </div>
 
         {/* Sound Selectors */}
-        <div className="flex flex-col md:flex-row gap-6 w-full">
-          <div className="flex-1">
-            <SoundSelector
-              category="wake-up"
-              title="Wake Up Sounds"
-              sounds={alarmOptions.wake_up_sounds}
-              selectedSound={selectedWakeUpSound}
-              onSoundChange={setSelectedWakeUpSound}
-            />
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+          <SoundSelector
+            title="Wake Up Sounds"
+            sounds={alarmOptions.wake_up_sounds}
+            selectedSound={selectedWakeUpSound}
+            onSoundChange={setSelectedWakeUpSound}
+          />
 
-          <div className="flex-1">
-            <SoundSelector
-              category="get-up"
-              title="Get Up Sounds"
-              sounds={alarmOptions.get_up_sounds}
-              selectedSound={selectedGetUpSound}
-              onSoundChange={setSelectedGetUpSound}
-            />
-          </div>
+          <SoundSelector
+            title="Get Up Sounds"
+            sounds={alarmOptions.get_up_sounds}
+            selectedSound={selectedGetUpSound}
+            onSoundChange={setSelectedGetUpSound}
+          />
         </div>
       </div>
     </SoundPlaybackProvider>
