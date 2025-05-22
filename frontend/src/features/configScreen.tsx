@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { BrightnessSlider, VolumeSlider } from "../components/Slider";
-import { SoundSelector } from "../components/SoundSelector";
+import { SoundSelector, SoundPlaybackProvider } from "../components/SoundSelector"; // Provider importieren
 import type { AlarmOptions } from "../types";
-import { getAlarmOptions } from "../api/alarmApi";
+import { alarmApi } from "../api/alarmApi";
 
 const ConfigScreen: React.FC = () => {
+  // State für die geladenen Alarm-Optionen
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // State für ausgewählte Sounds - verwende IDs statt Dateinamen
   const [selectedWakeUpSound, setSelectedWakeUpSound] = useState<string>("");
   const [selectedGetUpSound, setSelectedGetUpSound] = useState<string>("");
 
@@ -18,7 +20,7 @@ const ConfigScreen: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const options = await getAlarmOptions();
+        const options = await alarmApi.getOptions();
         setAlarmOptions(options);
 
         // Setze Default-Werte, falls verfügbar
@@ -73,40 +75,48 @@ const ConfigScreen: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-0">
-      {/* Sliders */}
-      <div className="space-y-3 mb-8">
-        <BrightnessSlider
-          min={alarmOptions.brightness_range.min}
-          max={alarmOptions.brightness_range.max}
-          defaultValue={alarmOptions.brightness_range.default}
-        />
-        <VolumeSlider
-          min={alarmOptions.volume_range.min}
-          max={alarmOptions.volume_range.max}
-          defaultValue={alarmOptions.volume_range.default}
-        />
-      </div>
+    <SoundPlaybackProvider>
+      {" "}
+      {/* 🔥 Provider wrapper für globalen Sound State */}
+      <div className="flex flex-col gap-0">
+        {/* Sliders */}
+        <div className="space-y-3 mb-8">
+          <BrightnessSlider
+            min={alarmOptions.brightness_range.min}
+            max={alarmOptions.brightness_range.max}
+            defaultValue={alarmOptions.brightness_range.default}
+          />
+          <VolumeSlider
+            min={alarmOptions.volume_range.min}
+            max={alarmOptions.volume_range.max}
+            defaultValue={alarmOptions.volume_range.default}
+          />
+        </div>
 
-      {/* Sound Selectors */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <SoundSelector
-          category="wake-up"
-          title="Wake Up Sounds"
-          sounds={alarmOptions.wake_up_sounds}
-          selectedSound={selectedWakeUpSound}
-          onSoundChange={setSelectedWakeUpSound}
-        />
+        {/* Sound Selectors */}
+        <div className="flex flex-col md:flex-row gap-6 w-full">
+          <div className="flex-1">
+            <SoundSelector
+              category="wake-up"
+              title="Wake Up Sounds"
+              sounds={alarmOptions.wake_up_sounds}
+              selectedSound={selectedWakeUpSound}
+              onSoundChange={setSelectedWakeUpSound}
+            />
+          </div>
 
-        <SoundSelector
-          category="get-up"
-          title="Get Up Sounds"
-          sounds={alarmOptions.get_up_sounds}
-          selectedSound={selectedGetUpSound}
-          onSoundChange={setSelectedGetUpSound}
-        />
+          <div className="flex-1">
+            <SoundSelector
+              category="get-up"
+              title="Get Up Sounds"
+              sounds={alarmOptions.get_up_sounds}
+              selectedSound={selectedGetUpSound}
+              onSoundChange={setSelectedGetUpSound}
+            />
+          </div>
+        </div>
       </div>
-    </div>
+    </SoundPlaybackProvider>
   );
 };
 

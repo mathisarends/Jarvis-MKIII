@@ -150,6 +150,32 @@ def play_sound(sound_id: str):
             status_code=500, 
             detail=f"Failed to play sound '{sound_id}': {str(e)}"
         )
+        
+@app.post("/alarms/stop")
+def stop_sound():
+    """
+    Stop the currently playing sound.
+    
+    Returns:
+        Success message confirming sound was stopped
+    """
+    try:
+        audio_player = AudioPlayerFactory.get_shared_instance()
+        audio_player.stop_sound()
+        
+        return {
+            "message": "Successfully stopped audio playback",
+            "status": "stopped"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Stop] Error stopping sound: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to stop sound: {str(e)}"
+        )
 
 
 @app.get("/alarms", response_model=AlarmListResponse)

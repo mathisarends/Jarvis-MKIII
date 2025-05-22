@@ -25,6 +25,10 @@ class AudioPlayer(ABC, LoggingMixin):
     @abstractmethod
     def stop(self):
         """Stop the audio player and clean up resources"""
+        
+    @abstractmethod
+    def stop_sound(self):
+        """Stop the currently playing sound"""
 
     # TODO: Refactor this here it should be sound path as well
     @abstractmethod

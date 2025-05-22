@@ -133,6 +133,7 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
     @override
     def stop(self):
         """Stop the audio player"""
+        print("Stopping audio player")
         self.is_playing = False
         if self.player_thread:
             self.player_thread.join(timeout=2.0)
@@ -143,6 +144,38 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 self.stream = None
         self.p.terminate()
         self.logger.info("Audio player stopped")
+        
+    @override
+    def stop_sound(self):
+        """Stop the currently playing sound (but keep player ready for next sound)"""
+        print("Stopping current sound playback")
+        
+        # 1. Stop PyAudio Stream (für TTS/Speech chunks)
+        self.is_playing = False
+        
+        if self.player_thread and self.player_thread.is_alive():
+            self.is_playing = False
+            self.player_thread.join(timeout=2.0)
+            
+        with self.stream_lock:
+            if self.stream:
+                try:
+                    if self.stream.is_active():
+                        self.stream.stop_stream()
+                        print("PyAudio stream paused")
+                except Exception as e:
+                    print(f"Error stopping PyAudio stream: {e}")
+        
+        # 2. Stop Pygame (für Sound-Dateien) 🔥 DAS WAR DAS FEHLENDE STÜCK!
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.stop()  # Stoppt alle pygame sounds
+                print("Pygame mixer stopped")
+        except Exception as e:
+            print(f"Error stopping pygame mixer: {e}")
+        
+        self.logger.info("Current sound playback stopped")
+        
 
     @override
     def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:

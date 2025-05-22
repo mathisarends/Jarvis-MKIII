@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useContext, createContext, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -18,11 +18,65 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { soundApi } from "../api/alarmApi";
 
 interface Sound {
   id: string;
   label: string;
 }
+
+// Context für globalen Playback State
+interface SoundPlaybackContextType {
+  currentlyPlaying: string | null;
+  setCurrentlyPlaying: (soundId: string | null) => void;
+  stopAllSounds: () => Promise<void>;
+}
+
+const SoundPlaybackContext = createContext<SoundPlaybackContextType | null>(null);
+
+// Provider Component
+export const SoundPlaybackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentlyPlaying, setCurrentlyPlayingState] = useState<string | null>(null);
+  const timeoutRef = useRef<any | null>(null);
+
+  const setCurrentlyPlaying = useCallback((soundId: string | null) => {
+    // Clear existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    setCurrentlyPlayingState(soundId);
+  }, []);
+
+  const stopAllSounds = useCallback(async () => {
+    try {
+      await soundApi.stop();
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      setCurrentlyPlayingState(null);
+    } catch (error) {
+      console.error("Error stopping all sounds:", error);
+    }
+  }, []);
+
+  return (
+    <SoundPlaybackContext.Provider value={{ currentlyPlaying, setCurrentlyPlaying, stopAllSounds }}>
+      {children}
+    </SoundPlaybackContext.Provider>
+  );
+};
+
+// Hook für Zugriff auf den Context
+const useSoundPlayback = () => {
+  const context = useContext(SoundPlaybackContext);
+  if (!context) {
+    throw new Error("useSoundPlayback must be used within SoundPlaybackProvider");
+  }
+  return context;
+};
 
 interface SoundOptionProps {
   sound: Sound;
@@ -34,8 +88,8 @@ interface SoundOptionProps {
 }
 
 const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect, category, style }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { currentlyPlaying, setCurrentlyPlaying, stopAllSounds } = useSoundPlayback();
+  const isPlaying = currentlyPlaying === sound.id;
 
   const getIcon = () => {
     const name = sound.label.toLowerCase();
@@ -59,31 +113,25 @@ const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect, 
 
   const togglePlayback = async () => {
     try {
-      if (isPlaying && audioRef.current) {
-        audioRef.current.pause();
-        setIsPlaying(false);
+      if (isPlaying) {
+        // Stop current sound
+        await stopAllSounds();
         return;
       }
 
-      // Play sound via API
-      const API_BASE_URL = "http://192.168.178.64:8000";
-      const response = await fetch(`${API_BASE_URL}/alarms/play/${encodeURIComponent(sound.id)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (response.ok) {
-        setIsPlaying(true);
-        setTimeout(() => {
-          setIsPlaying(false);
-        }, 3000);
-      } else {
-        console.error("Failed to play sound:", response.statusText);
+      // Stop any currently playing sound first
+      if (currentlyPlaying) {
+        await stopAllSounds();
+        // Small delay to ensure previous sound is stopped
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
+
+      // Start new sound
+      await soundApi.play(sound.id);
+      setCurrentlyPlaying(sound.id);
     } catch (error) {
       console.error("Error playing sound:", error);
+      setCurrentlyPlaying(null);
     }
   };
 
@@ -109,7 +157,14 @@ const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect, 
           {/* Play/Pause button */}
           <button
             onClick={togglePlayback}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200"
+            className={`
+              w-8 h-8 flex items-center justify-center rounded-full 
+              ${
+                isPlaying
+                  ? "bg-teal-100 text-teal-600 hover:bg-teal-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }
+            `}
           >
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>
@@ -140,6 +195,7 @@ export const SoundSelector: React.FC<{
 }> = ({ category, title, sounds, selectedSound, onSoundChange }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
+  const { stopAllSounds } = useSoundPlayback();
 
   // Toggle expanded state with animation handling
   const toggleExpanded = () => {
@@ -152,10 +208,18 @@ export const SoundSelector: React.FC<{
     }, sounds.length * 50 + 300); // Account for staggered animations plus base duration
   };
 
+  // Stop all sounds when collapsing
+  const handleToggleExpanded = async () => {
+    if (isExpanded) {
+      await stopAllSounds(); // Stop sounds when collapsing
+    }
+    toggleExpanded();
+  };
+
   return (
     <div>
       {/* Header with title and toggle button */}
-      <div className="flex items-center justify-between cursor-pointer mb-3 pr-4" onClick={toggleExpanded}>
+      <div className="flex items-center justify-between cursor-pointer mb-3 pr-4" onClick={handleToggleExpanded}>
         <h3 className="text-lg font-medium text-gray-700">{title}</h3>
         <button
           className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200"
