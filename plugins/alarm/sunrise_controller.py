@@ -206,49 +206,6 @@ class SunriseController(LoggingMixin, metaclass=SingletonMetaClass):
 
             self.logger.error(traceback.format_exc())
 
-
-class SunriseAlarmAdapter:
-    """
-    Adapter for integrating the SunriseController with the alarm system.
-    """
-
-    def __init__(self):
-        """
-        Initializes the SunriseAlarmAdapter.
-        """
-        self.sunrise_controller = SunriseController.get_instance()
-
-    def start_sunrise_for_alarm(
-        self,
-        scene_name: Optional[str] = None,
-        duration_seconds: Optional[int] = None,
-        max_brightness: Optional[float] = None,
-    ) -> None:
-        """
-        Starts the sunrise for an alarm.
-
-        This method can be called by the alarm system as a callback
-        when the alarm is triggered.
-
-        Args:
-            scene_name: Optional name of the target scene
-            duration_seconds: Optional duration of the sunrise in seconds
-            max_brightness: Optional maximum brightness to reach (0-100%)
-        """
-        self.sunrise_controller.start_sunrise(
-            scene_name, duration_seconds, max_brightness
-        )
-
-    def stop_sunrise(self) -> None:
-        """
-        Stops the running sunrise.
-
-        This method can be called by the alarm system
-        when the alarm is canceled.
-        """
-        self.sunrise_controller.stop_sunrise()
-
-
 if __name__ == "__main__":
     config = SunriseConfig(
         scene_name="Majestätischer Morgen",

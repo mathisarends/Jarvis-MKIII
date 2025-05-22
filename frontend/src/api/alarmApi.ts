@@ -16,15 +16,6 @@ export const getAlarmOptions = async (): Promise<AlarmOptions> => {
   return response.data;
 };
 
-export const getAlarms = async (): Promise<Alarm[]> => {
-  const response = await api.get("/alarms");
-  return response.data.alarm_ids.map((id: string) => ({
-    alarm_id: id,
-    // You would typically have another API endpoint to get alarm details
-    // This is a placeholder implementation
-  }));
-};
-
 export const createAlarm = async (alarm: Alarm): Promise<Alarm> => {
   const response = await api.post("/alarms", alarm);
   return response.data;

@@ -1,68 +1,110 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrightnessSlider, VolumeSlider } from "../components/Slider";
 import { SoundSelector } from "../components/SoundSelector";
+import type { AlarmOptions } from "../types";
+import { getAlarmOptions } from "../api/alarmApi";
 
 const ConfigScreen: React.FC = () => {
-  // State for selected sounds
-  const [selectedWakeUpSound, setSelectedWakeUpSound] = useState("wake-up-serene.mp3");
-  const [selectedGetUpSound, setSelectedGetUpSound] = useState("get-up-blossom.mp3");
+  const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock sound data (you would likely load this from somewhere)
-  const wakeUpSounds = [
-    "wake-up-bowl.mp3",
-    "wake-up-cherry.mp3",
-    "wake-up-focus.mp3",
-    "wake-up-fountain.mp3",
-    "wake-up-galaxy.mp3",
-    "wake-up-gong.mp3",
-    "wake-up-jungle.mp3",
-    "wake-up-forest.mp3",
-    "wake-up-paradise.mp3",
-    "wake-up-serene.mp3",
-    "wake-up-temple.mp3",
-    "wake-up-train.mp3",
-    "wake-up-waves.mp3",
-  ];
+  const [selectedWakeUpSound, setSelectedWakeUpSound] = useState<string>("");
+  const [selectedGetUpSound, setSelectedGetUpSound] = useState<string>("");
 
-  const getUpSounds = [
-    "get-up-aurora.mp3",
-    "get-up-blossom.mp3",
-    "get-up-retreat.mp3",
-    "get-up-shake.mp3",
-    "get-up-shimmer.mp3",
-    "get-up-time.mp3",
-    "get-up-wisdom.mp3",
-  ];
+  // Lade Alarm-Optionen beim Component Mount
+  useEffect(() => {
+    const loadAlarmOptions = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const options = await getAlarmOptions();
+        setAlarmOptions(options);
+
+        // Setze Default-Werte, falls verfügbar
+        if (options.wake_up_sounds.length > 0) {
+          setSelectedWakeUpSound(options.wake_up_sounds[0].id);
+        }
+        if (options.get_up_sounds.length > 0) {
+          setSelectedGetUpSound(options.get_up_sounds[0].id);
+        }
+      } catch (err) {
+        setError("Fehler beim Laden der Alarm-Optionen");
+        console.error("Error loading alarm options:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAlarmOptions();
+  }, []);
+
+  // Loading State
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-0">
+        <div className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p>Lade Alarm-Optionen...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error State
+  if (error || !alarmOptions) {
+    return (
+      <div className="flex flex-col gap-0">
+        <div className="flex items-center justify-center p-8">
+          <div className="text-center text-red-600">
+            <p>{error || "Unbekannter Fehler beim Laden der Daten"}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Erneut versuchen
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-0">
       {/* Sliders */}
       <div className="space-y-3 mb-8">
-        <BrightnessSlider />
-        <VolumeSlider />
+        <BrightnessSlider
+          min={alarmOptions.brightness_range.min}
+          max={alarmOptions.brightness_range.max}
+          defaultValue={alarmOptions.brightness_range.default}
+        />
+        <VolumeSlider
+          min={alarmOptions.volume_range.min}
+          max={alarmOptions.volume_range.max}
+          defaultValue={alarmOptions.volume_range.default}
+        />
       </div>
 
       {/* Sound Selectors */}
-      <div className="flex flex-col md:flex-row gap-6 w-full">
-        <div className="flex-1">
-          <SoundSelector
-            category="wake-up"
-            title="Wake Up Sounds"
-            sounds={wakeUpSounds}
-            selectedSound={selectedWakeUpSound}
-            onSoundChange={setSelectedWakeUpSound}
-          />
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <SoundSelector
+          category="wake-up"
+          title="Wake Up Sounds"
+          sounds={alarmOptions.wake_up_sounds}
+          selectedSound={selectedWakeUpSound}
+          onSoundChange={setSelectedWakeUpSound}
+        />
 
-        <div className="flex-1">
-          <SoundSelector
-            category="get-up"
-            title="Get Up Sounds"
-            sounds={getUpSounds}
-            selectedSound={selectedGetUpSound}
-            onSoundChange={setSelectedGetUpSound}
-          />
-        </div>
+        <SoundSelector
+          category="get-up"
+          title="Get Up Sounds"
+          sounds={alarmOptions.get_up_sounds}
+          selectedSound={selectedGetUpSound}
+          onSoundChange={setSelectedGetUpSound}
+        />
       </div>
     </div>
   );

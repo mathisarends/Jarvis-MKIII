@@ -23,7 +23,7 @@ const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, st
             <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100">{icon}</div>
             <div>
               <div className="font-medium text-gray-800">{label}</div>
-              <div className="text-xs text-gray-500">{valueLabel || `${value}%`}</div>
+              <div className="text-xs text-gray-500">{valueLabel || `${value}${max <= 1 ? "" : "%"}`}</div>
             </div>
           </div>
         </div>
@@ -45,8 +45,8 @@ const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, st
             />
           </div>
           <div className="flex justify-between mt-1 text-xs text-gray-500">
-            <span>Min</span>
-            <span>Max</span>
+            <span>{min}</span>
+            <span>{max}</span>
           </div>
         </div>
       </div>
@@ -54,36 +54,86 @@ const Slider: React.FC<SliderProps> = ({ value, onChange, min = 0, max = 100, st
   );
 };
 
-// Brightness Slider Component
-export const BrightnessSlider: React.FC = () => {
-  const [brightness, setBrightness] = useState(70); // Default 70%
+// Brightness Slider Component Props
+interface BrightnessSliderProps {
+  min?: number;
+  max?: number;
+  defaultValue?: number;
+  value?: number;
+  onChange?: (value: number) => void;
+}
+
+export const BrightnessSlider: React.FC<BrightnessSliderProps> = ({
+  min = 0,
+  max = 100,
+  defaultValue = 70,
+  value: controlledValue,
+  onChange: controlledOnChange,
+}) => {
+  const [internalBrightness, setInternalBrightness] = useState(defaultValue);
+
+  // Use controlled value if provided, otherwise use internal state
+  const brightness = controlledValue !== undefined ? controlledValue : internalBrightness;
+  const handleChange = controlledOnChange || setInternalBrightness;
+
+  const getBrightnessLabel = (val: number) => {
+    const percentage = ((val - min) / (max - min)) * 100;
+    if (percentage > 80) return "Bright";
+    if (percentage > 40) return "Medium";
+    return "Dim";
+  };
 
   return (
     <Slider
       value={brightness}
-      onChange={setBrightness}
+      onChange={handleChange}
+      min={min}
+      max={max}
+      step={max <= 1 ? 0.01 : 1}
       icon={<Sun className="w-4 h-4 text-gray-600" />}
       label="Lamp Brightness"
-      valueLabel={brightness > 80 ? "Bright" : brightness > 40 ? "Medium" : "Dim"}
+      valueLabel={getBrightnessLabel(brightness)}
     />
   );
 };
 
-// Volume Slider Component
-export const VolumeSlider: React.FC = () => {
-  const [volume, setVolume] = useState(50); // Default 50%
+// Volume Slider Component Props
+interface VolumeSliderProps {
+  min?: number;
+  max?: number;
+  defaultValue?: number;
+  value?: number;
+  onChange?: (value: number) => void;
+}
+
+export const VolumeSlider: React.FC<VolumeSliderProps> = ({
+  min = 0,
+  max = 100,
+  defaultValue = 50,
+  value: controlledValue,
+  onChange: controlledOnChange,
+}) => {
+  const [internalVolume, setInternalVolume] = useState(defaultValue);
+
+  // Use controlled value if provided, otherwise use internal state
+  const volume = controlledValue !== undefined ? controlledValue : internalVolume;
+  const handleChange = controlledOnChange || setInternalVolume;
 
   const getVolumeLabel = (vol: number) => {
-    if (vol === 0) return "Mute";
-    if (vol < 30) return "Quiet";
-    if (vol < 70) return "Medium";
+    if (vol === min) return "Mute";
+    const percentage = ((vol - min) / (max - min)) * 100;
+    if (percentage < 30) return "Quiet";
+    if (percentage < 70) return "Medium";
     return "Loud";
   };
 
   return (
     <Slider
       value={volume}
-      onChange={setVolume}
+      onChange={handleChange}
+      min={min}
+      max={max}
+      step={max <= 1 ? 0.01 : 1}
       icon={<Volume2 className="w-4 h-4 text-gray-600" />}
       label="Alarm Volume"
       valueLabel={getVolumeLabel(volume)}

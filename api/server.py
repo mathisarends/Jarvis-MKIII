@@ -1,10 +1,11 @@
 import os
 import re
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -19,9 +20,24 @@ alarm_system = AlarmSystem.get_instance()
 # Create a FastAPI application
 app = FastAPI(title="Jarvis Alarm API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",    # React Development Server (Create React App)
+        "http://localhost:5173",    # Vite Development Server
+        "http://192.168.178.64:5173",  # Deine spezifische IP
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Erlaubt alle HTTP-Methoden (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Erlaubt alle Headers
+)
+
 # Path to sounds directory
 SOUNDS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
+    "..",
     "resources",
     "sounds"
 )
@@ -45,18 +61,6 @@ class AlarmListResponse(BaseModel):
 def hello_world():
     return {"message": "Jarvis Alarm API"}
 
-@app.get("/alarms/sounds/wake-up")
-def get_wake_up_sounds():
-    """Get available wake-up sounds"""
-    options = alarm_system.get_wake_up_sound_options()
-    return [{"id": option.value, "label": option.label} for option in options]
-
-@app.get("/alarms/sounds/get-up")
-def get_get_up_sounds():
-    """Get available get-up sounds"""
-    options = alarm_system.get_get_up_sound_options()
-    return [{"id": option.value, "label": option.label} for option in options]
-
 @app.get("/alarms/options")
 def get_alarm_options():
     """Get all alarm configuration options in a single endpoint"""
@@ -78,61 +82,75 @@ def get_alarm_options():
         }
     }
 
-@app.get("/alarms/sounds")
-def get_sound_file_by_query(sound_category: str = None, sound_id: str = None):
+
+@app.post("/alarms/play/{sound_id:path}")
+def play_sound(sound_id: str):
     """
-    Get the MP3 file using query parameters.
-    
-    This endpoint can be used in two ways:
-    1. ?sound_id=wake_up_sounds/wake-up-focus (full sound ID)
-    2. ?sound_category=wake_up_sounds&sound_id=wake-up-focus (category and sound ID separately)
+    Play a sound using the audio player.
     
     Args:
-        sound_category: Optional category of the sound
-        sound_id: Either the full sound ID (with category) or just the filename part
+        sound_id: The full sound ID (e.g., "wake_up_sounds/wake-up-focus")
         
     Returns:
-        The MP3 file as a download
+        Success message with sound details
     """
-    # Handle different query parameter combinations
-    if sound_id and '/' in sound_id:
-        # Full sound ID is provided
-        category, filename = sound_id.split('/', 1)
-    elif sound_category and sound_id:
-        # Category and filename are provided separately
-        category = sound_category
-        filename = sound_id
-    else:
+    # Validate sound ID format
+    if '/' not in sound_id:
         raise HTTPException(
             status_code=400, 
-            detail="Invalid request. Use either ?sound_id=category/filename or ?sound_category=category&sound_id=filename"
+            detail="Invalid sound ID format. Use 'category/filename' (e.g., 'wake_up_sounds/wake-up-focus')"
         )
     
-    full_sound_id = f"{category}/{filename}"
+    # Split sound ID into category and filename
+    try:
+        category, filename = sound_id.split('/', 1)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid sound ID format. Use 'category/filename'"
+        )
     
-    # Validate sound ID
+    # Validate sound ID against available options
     wake_up_options = alarm_system.get_wake_up_sound_options()
     get_up_options = alarm_system.get_get_up_sound_options()
     
     valid_sound_ids = [option.value for option in wake_up_options] + [option.value for option in get_up_options]
     
-    print(f"[Query] Looking for sound ID: '{full_sound_id}' in valid IDs: {valid_sound_ids}")
+    print(f"[Play] Attempting to play sound ID: '{sound_id}' from valid IDs: {valid_sound_ids}")
     
-    if full_sound_id not in valid_sound_ids:
-        raise HTTPException(status_code=404, detail=f"Sound ID '{full_sound_id}' not found")
+    if sound_id not in valid_sound_ids:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Sound ID '{sound_id}' not found. Available sounds: {valid_sound_ids}"
+        )
     
+    # Check if the file exists on disk
     file_path = os.path.join(SOUNDS_DIR, category, f"{filename}.mp3")
-    
-    # Check if the file exists
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"Sound file not found for ID: '{full_sound_id}'")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Sound file not found on disk for ID: '{sound_id}'"
+        )
     
-    # Return the file as a download with the appropriate media type
-    return FileResponse(
-        path=file_path, 
-        media_type="audio/mpeg",
-        filename=f"{filename}.mp3"
-    )
+    # Get the shared audio player instance and play the sound
+    try:
+        audio_player = AudioPlayerFactory.get_shared_instance()
+        audio_player.play_sound(sound_id)
+        
+        return {
+            "message": f"Successfully started playing sound: {filename}",
+            "sound_id": sound_id,
+            "category": category,
+            "filename": filename
+        }
+        
+    except Exception as e:
+        print(f"[Play] Error playing sound '{sound_id}': {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to play sound '{sound_id}': {str(e)}"
+        )
+
 
 @app.get("/alarms", response_model=AlarmListResponse)
 def list_alarms():

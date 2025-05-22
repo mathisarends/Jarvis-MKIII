@@ -19,9 +19,13 @@ import {
   ChevronUp,
 } from "lucide-react";
 
+interface Sound {
+  id: string;
+  label: string;
+}
+
 interface SoundOptionProps {
-  soundName: string;
-  soundFile: string;
+  sound: Sound;
   isSelected: boolean;
   onSelect: () => void;
   category: "wake-up" | "get-up";
@@ -29,20 +33,12 @@ interface SoundOptionProps {
   style?: React.CSSProperties;
 }
 
-const SoundOption: React.FC<SoundOptionProps> = ({ soundName, soundFile, isSelected, onSelect, category, style }) => {
+const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect, category, style }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const getDisplayName = () => {
-    const baseName = soundName.replace(`${category}-`, "").replace(".mp3", "");
-    return baseName
-      .split("-")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
-
   const getIcon = () => {
-    const name = soundName.toLowerCase();
+    const name = sound.label.toLowerCase();
 
     const matchedIcon = [
       { match: ["blossom", "cherry"], icon: <Leaf size={18} /> },
@@ -58,22 +54,36 @@ const SoundOption: React.FC<SoundOptionProps> = ({ soundName, soundFile, isSelec
       { match: ["train", "focus"], icon: <Zap size={18} /> },
     ].find(({ match }) => match.some((term) => name.includes(term)))?.icon;
 
-    // Default icon if no match found
     return matchedIcon || <Music size={18} />;
   };
 
-  const togglePlayback = () => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio(soundFile);
-      audioRef.current.onended = () => setIsPlaying(false);
-    }
+  const togglePlayback = async () => {
+    try {
+      if (isPlaying && audioRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+        return;
+      }
 
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+      // Play sound via API
+      const API_BASE_URL = "http://192.168.178.64:8000";
+      const response = await fetch(`${API_BASE_URL}/alarms/play/${encodeURIComponent(sound.id)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        setIsPlaying(true);
+        setTimeout(() => {
+          setIsPlaying(false);
+        }, 3000);
+      } else {
+        console.error("Failed to play sound:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error playing sound:", error);
     }
   };
 
@@ -92,7 +102,7 @@ const SoundOption: React.FC<SoundOptionProps> = ({ soundName, soundFile, isSelec
           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 text-gray-600">
             {getIcon()}
           </div>
-          <span className="font-medium text-gray-800">{getDisplayName()}</span>
+          <span className="font-medium text-gray-800">{sound.label}</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -120,13 +130,13 @@ const SoundOption: React.FC<SoundOptionProps> = ({ soundName, soundFile, isSelec
   );
 };
 
-// Enhanced SoundSelector with collapsible functionality
+// Enhanced SoundSelector with new data structure
 export const SoundSelector: React.FC<{
   category: "wake-up" | "get-up";
   title: string;
-  sounds: string[];
+  sounds: Sound[];
   selectedSound: string;
-  onSoundChange: (sound: string) => void;
+  onSoundChange: (soundId: string) => void;
 }> = ({ category, title, sounds, selectedSound, onSoundChange }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -176,11 +186,10 @@ export const SoundSelector: React.FC<{
 
             return (
               <SoundOption
-                key={sound}
-                soundName={sound}
-                soundFile={`/sounds/${category}/${sound}`}
-                isSelected={selectedSound === sound}
-                onSelect={() => onSoundChange(sound)}
+                key={sound.id}
+                sound={sound}
+                isSelected={selectedSound === sound.id}
+                onSelect={() => onSoundChange(sound.id)}
                 category={category}
                 animationDelay={delay}
                 style={animationStyle}
