@@ -30,7 +30,6 @@ class AudioPlayer(ABC, LoggingMixin):
     def stop_sound(self):
         """Stop the currently playing sound"""
 
-    # TODO: Refactor this here it should be sound path as well
     @abstractmethod
     def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
         """

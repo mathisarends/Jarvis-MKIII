@@ -6,9 +6,10 @@ from api.routes.alarm_settings import alarm_settings_router
 from api.routes.alarms import alarm_router
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.py_audio_player import PyAudioPlayer
+from core.audio.sonos_audio_player import SonosPlayer
 from plugins.alarm.daylight_alarm import AlarmSystem
 
-AudioPlayerFactory.initialize_with(PyAudioPlayer)
+AudioPlayerFactory.initialize_with(SonosPlayer)
 alarm_system = AlarmSystem.get_instance()
 
 app = FastAPI(
@@ -32,15 +33,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(alarm_router, prefix="/alarms", tags=["alarms"])
-app.include_router(alarm_settings_router, prefix="/alarms/settings", tags=["alarm_settings"])
-
+app.include_router(alarm_settings_router, prefix="/settings", tags=["settings"]) 
 
 @app.get("/", tags=["health"])
 def health_check():
     return {"message": "Jarvis Alarm API", "status": "healthy"}
-
 
 if __name__ == "__main__":
     print("Starting FastAPI server on http://localhost:8000")

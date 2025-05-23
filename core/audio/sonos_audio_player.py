@@ -8,7 +8,7 @@ import threading
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import soco
 from pydub import AudioSegment
@@ -246,7 +246,7 @@ class SonosPlayer(AudioPlayer):
     """Implementation of AudioPlayer for Sonos speakers using queue functionality"""
 
     @override
-    def __init__(self, project_dir=None, port=8000):
+    def __init__(self, project_dir=None, port=8010):
         """
         Initialize the SonosPlayer.
 
@@ -274,15 +274,13 @@ class SonosPlayer(AudioPlayer):
         )
         self._queue_management_lock = (
             threading.Lock()
-        )  # Lock für Warteschlangenoperationen
-        self._playback_sequence = []  # Liste zur Verfolgung der Wiedergabereihenfolge
-        self._playing_position = 0  # Aktuelle Wiedergabeposition
+        )
+        self._playback_sequence = []
+        self._playing_position = 0
 
-        # Create directories for sounds and temp files within the project structure
         if project_dir:
             self.project_dir = Path(project_dir)
         else:
-            # If not specified, use the parent directory of the current file
             self.project_dir = Path(
                 os.path.dirname(
                     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -514,7 +512,7 @@ class SonosPlayer(AudioPlayer):
 
     @override
     def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
-        """Play a sound file"""
+        """Play a sound file with optional volume override"""
         try:
             # Determine path to sound file
             if not sound_name.endswith(".mp3"):
@@ -538,18 +536,60 @@ class SonosPlayer(AudioPlayer):
 
             # Play on Sonos directly (not using queue for static sounds)
             if self._sonos_device:
-                # First stop any current playback
-                self._sonos_device.stop()
+                # Store current volume if we need to change it temporarily
+                original_volume = None
+                
+                if volume is not None:
+                    try:
+                        original_volume = self._sonos_device.volume
+                        temp_volume = int(max(0.0, min(1.0, volume)) * 100)
+                        self._sonos_device.volume = temp_volume
+                        self.logger.debug("Set temporary volume to %d%% for sound playback", temp_volume)
+                    except Exception as e:
+                        self.logger.warning("Error setting temporary volume: %s", e)
+                        original_volume = None
 
-                # Play directly with transport uri
-                self._sonos_device.play_uri(sound_url)
-                return True
+                try:
+                    self._sonos_device.stop()
+
+                    self._sonos_device.play_uri(sound_url)
+                    
+                    result = True
+                except Exception as e:
+                    self.logger.error("Error playing sound on Sonos: %s", e)
+                    result = False
+                finally:
+                    if original_volume is not None:
+                        try:
+                            import time
+                            time.sleep(0.1)
+                            self._sonos_device.volume = original_volume
+                            self.logger.debug("Restored original volume to %d%%", original_volume)
+                        except Exception as e:
+                            self.logger.warning("Error restoring original volume: %s", e)
+                
+                return result
             else:
                 self.logger.warning("No Sonos device connected")
                 return False
 
         except Exception as e:
             self.logger.error("Error playing sound %s: %s", sound_name, e)
+            return False
+    
+    @override
+    def stop_sound(self):
+        """Stop the currently playing sound"""
+        try:
+            if self._sonos_device:
+                self._sonos_device.stop()
+                self.logger.debug("Stopped current sound playback")
+                return True
+            else:
+                self.logger.warning("No Sonos device connected, cannot stop sound")
+                return False
+        except Exception as e:
+            self.logger.error("Error stopping sound: %s", e)
             return False
 
     def _discover_devices(self):

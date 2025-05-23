@@ -18,6 +18,7 @@ def get_all_alarms(service: AlarmService = Depends(get_alarm_service)):
     """Get all alarms with their status (active/inactive/scheduled)"""
     return service.get_all_alarms()
 
+
 @alarm_router.post("/", response_model=CreateAlarmResponse)
 def create_alarm(
     request: CreateAlarmRequest, service: AlarmService = Depends(get_alarm_service)
@@ -25,20 +26,17 @@ def create_alarm(
     """Create a new alarm with the specified time"""
     return service.create_alarm(request)
 
+
 @alarm_router.put("/{alarm_id}/toggle")
 def toggle_alarm(
-    alarm_id: str, 
-    active: bool,
-    service: AlarmService = Depends(get_alarm_service)
+    alarm_id: str, active: bool, service: AlarmService = Depends(get_alarm_service)
 ):
     """Toggle an alarm active/inactive"""
     return service.toggle_alarm(alarm_id, active)
 
+
 @alarm_router.delete("/{alarm_id}")
-def delete_alarm(
-    alarm_id: str, 
-    service: AlarmService = Depends(get_alarm_service)
-):
+def delete_alarm(alarm_id: str, service: AlarmService = Depends(get_alarm_service)):
     """Permanently delete an alarm"""
     return service.delete_alarm(alarm_id)
 
@@ -59,6 +57,7 @@ def play_sound(sound_id: str, service: AlarmService = Depends(get_alarm_service)
 def stop_sound(service: AlarmService = Depends(get_alarm_service)):
     """Stop currently playing sound"""
     return service.stop_sound()
+
 
 @alarm_router.delete("/alarms/{alarm_id}", response_model=CancelAlarmResponse)
 def cancel_alarm(alarm_id: str, service: AlarmService = Depends(get_alarm_service)):

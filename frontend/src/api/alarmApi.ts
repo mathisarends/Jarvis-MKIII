@@ -84,33 +84,33 @@ export const settingsApi = {
     wake_up_sound_id: string;
     get_up_sound_id: string;
   }> => {
-    const response = await api.get("/alarms/settings");
+    const response = await api.get("/settings");
     return response.data;
   },
 
   setBrightness: async (brightness: number): Promise<{ message: string; brightness: number }> => {
-    const response = await api.put("/alarms/settings/brightness", {
+    const response = await api.put("/settings/brightness", {
       brightness: brightness,
     });
     return response.data;
   },
 
   setVolume: async (volume: number): Promise<{ message: string; volume: number }> => {
-    const response = await api.put("/alarms/settings/volume", {
+    const response = await api.put("/settings/volume", {
       volume: volume,
     });
     return response.data;
   },
 
   setWakeUpSound: async (soundId: string): Promise<{ message: string; wake_up_sound_id: string }> => {
-    const response = await api.put("/alarms/settings/wake-up-sound", {
+    const response = await api.put("/settings/wake-up-sound", {
       sound_id: soundId,
     });
     return response.data;
   },
 
   setGetUpSound: async (soundId: string): Promise<{ message: string; get_up_sound_id: string }> => {
-    const response = await api.put("/alarms/settings/get-up-sound", {
+    const response = await api.put("/settings/get-up-sound", {
       sound_id: soundId,
     });
     return response.data;
