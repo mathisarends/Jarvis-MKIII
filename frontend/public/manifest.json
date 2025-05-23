@@ -1,24 +1,12 @@
 {
-  "name": "Vizro Alarm",
-  "short_name": "Vizro Alarm",
-  "description": "Eine App, die es erlaubt einen Tageslichtwecker zu erstellen, der den Benutzer sanft weckt.",
+  "name": "Jarvis Alarm System",
+  "short_name": "Jarvis Alarm",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
-  "orientation": "portrait",
+  "theme_color": "#3b82f6",
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }

@@ -5,6 +5,7 @@ import { useHeader } from "../contexts/headerContext";
 import TimePickerModal from "../components/TimePickerModal";
 import { alarmApi } from "../api/alarmApi";
 import type { AlarmStatus } from "../api/alarmModels";
+import AlarmOverlay from "../components/alarmOverlay";
 
 const AlarmScreen: React.FC = () => {
   const { updateConfig, resetConfig } = useHeader();
@@ -160,6 +161,7 @@ const AlarmScreen: React.FC = () => {
         }}
         onSave={handleAddAlarm}
       />
+
     </div>
   );
 };
