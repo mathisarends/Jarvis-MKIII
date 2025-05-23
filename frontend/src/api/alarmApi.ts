@@ -2,13 +2,14 @@
 import axios from "axios";
 import type { AxiosInstance } from "axios";
 import type { AlarmOptions } from "../types";
+import type { SwitchSystemResponse, AudioSystemsResponse, AudioSystem } from "./audioSystemModels";
 import type {
   AllAlarmsResponse,
   CreateAlarmRequest,
   CreateAlarmResponse,
   DeleteAlarmResponse,
   ToggleAlarmResponse,
-} from "./alarm_models";
+} from "./alarmModels";
 
 const API_BASE_URL = "http://192.168.178.64:8000";
 
@@ -114,5 +115,33 @@ export const settingsApi = {
       sound_id: soundId,
     });
     return response.data;
+  },
+};
+
+export const audioSystemApi = {
+  getSystems: async (): Promise<AudioSystemsResponse> => {
+    const response = await api.get("/audio/systems");
+    return response.data;
+  },
+
+  switchSystem: async (systemId: string): Promise<SwitchSystemResponse> => {
+    const response = await api.put(`/audio/systems/${systemId}/activate`);
+    return response.data;
+  },
+
+  getActiveSystem: (systems: AudioSystem[]): AudioSystem | undefined => {
+    return systems.find((system) => system.active);
+  },
+
+  findSystemById: (systems: AudioSystem[], id: string): AudioSystem | undefined => {
+    return systems.find((system) => system.id === id);
+  },
+
+  switchToSonos: async (): Promise<SwitchSystemResponse> => {
+    return audioSystemApi.switchSystem("sonos_era_100");
+  },
+
+  switchToUSB: async (): Promise<SwitchSystemResponse> => {
+    return audioSystemApi.switchSystem("usb_speaker");
   },
 };

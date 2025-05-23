@@ -1,4 +1,4 @@
-from typing import Type, TypeVar, Optional, ClassVar, cast
+from typing import ClassVar, Optional, Type, TypeVar, cast
 
 from core.audio.audio_player_base import AudioPlayer
 
@@ -84,6 +84,89 @@ class AudioPlayerFactory:
             )
 
         return cls._instance
+    
+    @classmethod
+    def set_strategy(cls, new_player_class: Type[T], play_test_sound: bool = True) -> T:
+        """
+        Switch to a different audio player strategy at runtime.
+        
+        This method safely transitions from the current audio player to a new one:
+        1. Stops the current player
+        2. Creates and starts the new player
+        3. Optionally plays a test sound
+        4. If anything fails, attempts to restore the previous player
+
+        Args:
+            new_player_class: The new AudioPlayer implementation class to switch to
+            play_test_sound: Whether to play a test sound after switching
+
+        Returns:
+            The new audio player instance
+
+        Raises:
+            ValueError: If no player is currently initialized
+            RuntimeError: If the strategy switch fails and rollback also fails
+        """
+        if cls._instance is None:
+            raise ValueError(
+                "No audio player is currently initialized. "
+                "Call AudioPlayerFactory.initialize_with() first."
+            )
+
+        if new_player_class is cls._player_class:
+            return cast(T, cls._instance)
+
+        old_instance = cls._instance
+        old_player_class = cls._player_class
+
+        try:
+            if hasattr(old_instance, 'stop'):
+                old_instance.stop()
+
+            cls._instance = new_player_class()
+            cls._player_class = new_player_class
+            
+            cls._instance.start()
+
+            if play_test_sound:
+                cls._instance.play_sound("system_switch")
+
+            return cast(T, cls._instance)
+
+        except Exception as e:
+            # Rollback on failure
+            cls._instance = old_instance
+            cls._player_class = old_player_class
+            
+            try:
+                # Try to restart the old player
+                if hasattr(old_instance, 'start'):
+                    old_instance.start()
+            except Exception as rollback_error:
+                # Critical failure - both new and old player failed
+                cls._instance = None
+                cls._player_class = None
+                raise RuntimeError(
+                    f"Audio player strategy switch failed: {str(e)}. "
+                    f"Rollback also failed: {str(rollback_error)}. "
+                    f"No audio player is active."
+                ) from e
+
+            # Re-raise original exception after successful rollback
+            raise RuntimeError(
+                f"Failed to switch to {new_player_class.__name__}: {str(e)}. "
+                f"Rolled back to {old_player_class.__name__}."
+            ) from e
+
+    @classmethod
+    def get_current_strategy(cls) -> Optional[Type[AudioPlayer]]:
+        """
+        Get the currently active audio player strategy class.
+
+        Returns:
+            The class of the currently active audio player, or None if not initialized
+        """
+        return cls._player_class
 
     @classmethod
     def reset(cls) -> None:

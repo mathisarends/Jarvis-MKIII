@@ -4,7 +4,7 @@ import SleepScheduleItem from "../components/SleepScheduleItem";
 import { useHeader } from "../contexts/headerContext";
 import TimePickerModal from "../components/TimePickerModal";
 import { alarmApi } from "../api/alarmApi";
-import type { AlarmStatus } from "../api/alarm_models";
+import type { AlarmStatus } from "../api/alarmModels";
 
 const AlarmScreen: React.FC = () => {
   const { updateConfig, resetConfig } = useHeader();

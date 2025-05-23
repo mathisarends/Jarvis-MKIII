@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes.alarm_settings import alarm_settings_router
 from api.routes.alarms import alarm_router
+from api.routes.audio_system import audio_system_router
 from core.audio.audio_player_factory import AudioPlayerFactory
-from core.audio.py_audio_player import PyAudioPlayer
 from core.audio.sonos_audio_player import SonosPlayer
 from plugins.alarm.daylight_alarm import AlarmSystem
 
@@ -34,7 +34,10 @@ app.add_middleware(
 )
 
 app.include_router(alarm_router, prefix="/alarms", tags=["alarms"])
-app.include_router(alarm_settings_router, prefix="/settings", tags=["settings"]) 
+app.include_router(alarm_settings_router, prefix="/settings", tags=["settings"])
+app.include_router(
+    audio_system_router, prefix="/audio_system", tags=["alarm_system"]
+)
 
 @app.get("/", tags=["health"])
 def health_check():
