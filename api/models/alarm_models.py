@@ -98,12 +98,18 @@ class SoundRequest(BaseModel):
 
 class CreateAlarmRequest(BaseModel):
     """Request model for creating an alarm"""
-    alarm_id: str = Field(..., min_length=1, max_length=50, description="Unique identifier for the alarm")
-    time: str = Field(..., description="Time in HH:MM format or +X for X seconds from now")
+
+    alarm_id: str = Field(
+        ..., min_length=1, max_length=50, description="Unique identifier for the alarm"
+    )
+    time: str = Field(
+        ..., description="Time in HH:MM format or +X for X seconds from now"
+    )
 
 
 class CreateAlarmResponse(BaseModel):
     """Response model for creating an alarm"""
+
     message: str
     alarm_id: str
     time: str
@@ -112,5 +118,6 @@ class CreateAlarmResponse(BaseModel):
 
 class CancelAlarmResponse(BaseModel):
     """Response model for canceling an alarm"""
+
     message: str
     alarm_id: str

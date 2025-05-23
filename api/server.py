@@ -2,10 +2,13 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.dependencies.audio import initialize_audio_system
 from api.routes import alarms
+from core.audio.audio_player_factory import AudioPlayerFactory
+from core.audio.py_audio_player import PyAudioPlayer
+from plugins.alarm.daylight_alarm import AlarmSystem
 
-initialize_audio_system()
+AudioPlayerFactory.initialize_with(PyAudioPlayer)
+alarm_system = AlarmSystem.get_instance()
 
 app = FastAPI(
     title="Jarvis Alarm API",

@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
-from pydantic import Field
 
+from api.dependencies.audio import get_audio_player
 from api.models.alarm_models import (AlarmOptions, BrightnessRequest,
                                      CancelAlarmResponse, CreateAlarmRequest,
                                      CreateAlarmResponse, PlaySoundResponse,
                                      SoundRequest, StopSoundResponse,
                                      VolumeRequest)
 from api.services.alarm_service import AlarmService
+from core.audio.audio_player_base import AudioPlayer
 
 router = APIRouter()
 
@@ -50,16 +51,18 @@ def set_brightness(
 
 @router.put("/settings/volume")
 def set_volume(
-    request: VolumeRequest, service: AlarmService = Depends(get_alarm_service)
+    request: VolumeRequest,
+    service: AlarmService = Depends(get_alarm_service),
+    audio_player: AudioPlayer = Depends(get_audio_player),
 ):
     """Set the global volume for all alarms"""
+    audio_player.play_sound("sound_check", volume=request.volume)
     return service.set_volume(request.volume)
 
 
 @router.put("/settings/wake-up-sound")
 def set_wake_up_sound(
-    request: SoundRequest,
-    service: AlarmService = Depends(get_alarm_service)
+    request: SoundRequest, service: AlarmService = Depends(get_alarm_service)
 ):
     """Set the global wake-up sound for all alarms"""
     return service.set_wake_up_sound(request.sound_id)
@@ -82,17 +85,13 @@ def set_get_up_sound(
 
 @router.post("/alarms", response_model=CreateAlarmResponse)
 def create_alarm(
-    request: CreateAlarmRequest,
-    service: AlarmService = Depends(get_alarm_service)
+    request: CreateAlarmRequest, service: AlarmService = Depends(get_alarm_service)
 ):
     """Create a new alarm with the specified time"""
     return service.create_alarm(request.alarm_id, request.time)
 
 
 @router.delete("/alarms/{alarm_id}", response_model=CancelAlarmResponse)
-def cancel_alarm(
-    alarm_id: str,
-    service: AlarmService = Depends(get_alarm_service)
-):
+def cancel_alarm(alarm_id: str, service: AlarmService = Depends(get_alarm_service)):
     """Cancel an existing alarm by its ID"""
     return service.cancel_alarm(alarm_id)
