@@ -195,13 +195,11 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
                 max_brightness=settings['max_brightness'],
             )
 
-        # Play sound with current volume
         AudioPlayerFactory.get_shared_instance().play_sound(
             sound_id, volume=settings['volume']
         )
 
-        # After alarm execution, mark it for rescheduling tomorrow if it's a recurring alarm
-        if stage == AlarmStage.GET_UP:  # After the final stage
+        if stage == AlarmStage.GET_UP:
             self._alarm_system.reschedule_alarm_for_tomorrow(alarm_id)
 
 

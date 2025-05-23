@@ -2,7 +2,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import alarms
+from api.routes.alarm_settings import alarm_settings_router
+from api.routes.alarms import alarm_router
 from core.audio.audio_player_factory import AudioPlayerFactory
 from core.audio.py_audio_player import PyAudioPlayer
 from plugins.alarm.daylight_alarm import AlarmSystem
@@ -32,7 +33,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(alarms.router, prefix="/alarms", tags=["alarms"])
+app.include_router(alarm_router, prefix="/alarms", tags=["alarms"])
+app.include_router(alarm_settings_router, prefix="/alarms/settings", tags=["alarm_settings"])
 
 
 @app.get("/", tags=["health"])
