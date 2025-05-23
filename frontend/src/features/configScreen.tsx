@@ -3,10 +3,13 @@ import { BrightnessSlider, VolumeSlider } from "../components/Slider";
 import { SoundSelector } from "../components/SoundSelector";
 import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
 import type { AlarmOptions } from "../types";
-import { alarmApi, settingsApi } from "../api/alarmApi";
+import { alarmApi, settingsApi, audioSystemApi } from "../api/alarmApi";
+import type { AudioSystem } from "../api/audioSystemModels";
+import { AudioSystemSelector } from "../components/audioSystemSelector";
 
 const ConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
+  const [audioSystems, setAudioSystems] = useState<AudioSystem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,10 +26,15 @@ const ConfigScreen: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // ✅ Parallel loading mit beiden APIs
-        const [options, settings] = await Promise.all([alarmApi.getOptions(), settingsApi.getGlobal()]);
+        // ✅ Parallel loading mit allen APIs
+        const [options, settings, audioSystemsResponse] = await Promise.all([
+          alarmApi.getOptions(),
+          settingsApi.getGlobal(),
+          audioSystemApi.getSystems(),
+        ]);
 
         setAlarmOptions(options);
+        setAudioSystems(audioSystemsResponse.systems);
         setGlobalSettings({
           brightness: settings.max_brightness,
           volume: settings.volume,
@@ -80,6 +88,34 @@ const ConfigScreen: React.FC = () => {
     }
   };
 
+  const onAudioSystemChange = async (systemId: string) => {
+    try {
+      await audioSystemApi.switchSystem(systemId);
+
+      // Update local state
+      setAudioSystems((prev) =>
+        prev.map((system) => ({
+          ...system,
+          active: system.id === systemId,
+        }))
+      );
+
+      // Reload audio systems to get server state
+      const response = await audioSystemApi.getSystems();
+      setAudioSystems(response.systems);
+    } catch (error) {
+      console.error("❌ Failed to switch audio system:", error);
+
+      // Reload on error to sync with server
+      try {
+        const response = await audioSystemApi.getSystems();
+        setAudioSystems(response.systems);
+      } catch (reloadError) {
+        console.error("❌ Failed to reload audio systems:", reloadError);
+      }
+    }
+  };
+
   // Live updates (für smooth UX)
   const onBrightnessChange = (value: number) => {
     setGlobalSettings((prev) => ({ ...prev, brightness: value }));
@@ -123,6 +159,9 @@ const ConfigScreen: React.FC = () => {
   return (
     <SoundPlaybackProvider>
       <div className="flex flex-col gap-5">
+        {/* Audio System Selection */}
+        <AudioSystemSelector systems={audioSystems} onSystemChange={onAudioSystemChange} />
+
         <BrightnessSlider
           min={alarmOptions.brightness_range.min}
           max={alarmOptions.brightness_range.max}

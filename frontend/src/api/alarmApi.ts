@@ -125,7 +125,7 @@ export const audioSystemApi = {
   },
 
   switchSystem: async (systemId: string): Promise<SwitchSystemResponse> => {
-    const response = await api.put(`/audio/systems/${systemId}/activate`);
+    const response = await api.put(`/audio/${systemId}/activate`);
     return response.data;
   },
 

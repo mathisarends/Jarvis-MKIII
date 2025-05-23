@@ -36,7 +36,7 @@ app.add_middleware(
 app.include_router(alarm_router, prefix="/alarms", tags=["alarms"])
 app.include_router(alarm_settings_router, prefix="/settings", tags=["settings"])
 app.include_router(
-    audio_system_router, prefix="/audio_system", tags=["alarm_system"]
+    audio_system_router, prefix="/audio", tags=["alarm_system"]
 )
 
 @app.get("/", tags=["health"])
