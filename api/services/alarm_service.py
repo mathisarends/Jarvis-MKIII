@@ -6,13 +6,14 @@ from fastapi import HTTPException
 
 from api.dependencies.audio import get_audio_player
 from api.models.alarm_models import (AlarmOptions, BrightnessRange,
-                                     SoundOption, VolumeRange)
+                                     CreateAlarmRequest, SoundOption,
+                                     VolumeRange)
 from plugins.alarm.daylight_alarm import AlarmSystem
 
 
 class AlarmService:
     def __init__(self):
-        self.alarm_system = AlarmSystem.get_instance()
+        self.alarm_system: AlarmSystem = AlarmSystem.get_instance()
         self.sounds_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "..",
@@ -72,7 +73,7 @@ class AlarmService:
 
         return category, filename
 
-    def play_sound(self, sound_id: str) -> dict:
+    def play_alarm_sound(self, sound_id: str) -> dict:
         """Play a sound"""
         category, filename = self.validate_sound_id(sound_id)
 
@@ -173,114 +174,146 @@ class AlarmService:
                 status_code=500, detail=f"Failed to get settings: {str(e)}"
             )
 
-    def create_alarm(self, alarm_id: str, time: str) -> dict:
-        """Create a new alarm with global settings"""
-        # Validate alarm_id
-        if not alarm_id or not alarm_id.strip():
-            raise HTTPException(status_code=400, detail="Alarm ID cannot be empty")
+    def create_alarm(self, request: CreateAlarmRequest) -> dict:
+        """Create a new alarm with auto-generated ID based on time"""
 
-        if len(alarm_id) > 50:
-            raise HTTPException(
-                status_code=400, detail="Alarm ID too long (max 50 characters)"
-            )
+        alarm_id = self._generate_alarm_id(request.time)
 
-        # Process time format
         try:
-            time_str = self._process_time_input(time)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        # Check if alarm already exists
-        try:
-            active_alarms = self.get_active_alarms()
-            if alarm_id in active_alarms:
-                raise HTTPException(
-                    status_code=409, detail=f"Alarm with ID '{alarm_id}' already exists"
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to check existing alarms: {str(e)}"
-            )
-
-        # Create the alarm
-        try:
-            self.alarm_system.schedule_alarm(alarm_id, time_str)
-
-            # Get current global settings for response
-            settings = self.alarm_system.get_global_settings()
+            self.alarm_system.schedule_alarm(alarm_id, request.time)
 
             return {
-                "message": f"Alarm '{alarm_id}' scheduled for {time_str}",
+                "message": f"Alarm scheduled for {request.time}",
                 "alarm_id": alarm_id,
-                "time": time_str,
-                "settings_used": {
-                    "wake_up_sound": settings["wake_up_sound_id"],
-                    "get_up_sound": settings["get_up_sound_id"],
-                    "volume": settings["volume"],
-                    "brightness": settings["max_brightness"],
-                    "wake_up_duration": "9 minutes (fixed)",
-                    "sunrise": "enabled (always)",
-                },
+                "time": request.time,
             }
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Failed to create alarm: {str(e)}"
             )
 
-    def cancel_alarm(self, alarm_id: str) -> dict:
-        """Cancel an existing alarm"""
-        if not alarm_id or not alarm_id.strip():
-            raise HTTPException(status_code=400, detail="Alarm ID cannot be empty")
-
+    def get_all_alarms(self) -> dict:
+        """Get all alarms with their status"""
         try:
-            active_alarms = self.get_active_alarms()
-            if alarm_id not in active_alarms:
-                raise HTTPException(
-                    status_code=404, detail=f"Alarm with ID '{alarm_id}' not found"
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to check alarm existence: {str(e)}"
-            )
-
-        try:
-            self.alarm_system.cancel_alarm(alarm_id)
+            alarms = self.alarm_system.get_all_alarms()
+            
             return {
-                "message": f"Alarm '{alarm_id}' canceled successfully",
-                "alarm_id": alarm_id,
+                "alarms": [
+                    {
+                        "alarm_id": alarm.alarm_id,
+                        "time": alarm.time_str,
+                        "active": alarm.active,
+                        "scheduled": alarm.scheduled,
+                        "next_execution": alarm.next_execution.isoformat() if alarm.next_execution else None,
+                        "time_until": self._calculate_time_until(alarm.next_execution) if alarm.next_execution else None
+                    }
+                    for alarm in alarms
+                ],
+                "global_settings": self.alarm_system.get_global_settings()
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to cancel alarm: {str(e)}"
+                status_code=500, 
+                detail=f"Failed to get alarms: {str(e)}"
             )
 
-    def _process_time_input(self, time_input: str) -> str:
-        """Process time input and convert to HH:MM format"""
-        if not time_input or not time_input.strip():
-            raise ValueError("Time cannot be empty")
+    def toggle_alarm(self, alarm_id: str, active: bool) -> dict:
+        """Toggle an alarm active/inactive"""
+        try:
+            alarm_info = self.alarm_system.toggle_alarm(alarm_id, active)
+            
+            return {
+                "message": f"Alarm {alarm_id} {'activated' if active else 'deactivated'}",
+                "alarm_id": alarm_info.alarm_id,
+                "time": alarm_info.time_str,
+                "active": alarm_info.active,
+                "scheduled": alarm_info.scheduled,
+                "next_execution": alarm_info.next_execution.isoformat() if alarm_info.next_execution else None
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to toggle alarm: {str(e)}"
+            )
 
-        time_input = time_input.strip()
+    def delete_alarm(self, alarm_id: str) -> dict:
+        """Permanently delete an alarm"""
+        try:
+            self.alarm_system.delete_alarm(alarm_id)
+            
+            return {
+                "message": f"Alarm {alarm_id} deleted permanently",
+                "alarm_id": alarm_id
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to delete alarm: {str(e)}"
+            )
 
-        if time_input.startswith("+"):
-            try:
-                seconds = int(time_input[1:])
-                if seconds <= 0 or seconds > 86400:
-                    raise ValueError("Seconds must be between 1 and 86400")
+    def create_alarm(self, request: CreateAlarmRequest) -> dict:
+        """Create a new alarm with auto-generated ID based on time"""
+        
+        alarm_id = self._generate_alarm_id(request.time)
+        
+        try:
+            alarm_info = self.alarm_system.create_alarm(alarm_id, request.time)
+            
+            settings = self.alarm_system.get_global_settings()
+            
+            return {
+                "message": f"Alarm created for {request.time}",
+                "alarm_id": alarm_info.alarm_id,
+                "time": alarm_info.time_str,
+                "active": alarm_info.active,
+                "scheduled": alarm_info.scheduled,
+                "next_execution": alarm_info.next_execution.isoformat() if alarm_info.next_execution else None,
+                "settings_used": {
+                    "wake_up_sound": settings["wake_up_sound_id"],
+                    "get_up_sound": settings["get_up_sound_id"],
+                    "volume": settings["volume"],
+                    "brightness": settings["max_brightness"],
+                    "wake_up_duration": "9 minutes (fixed)",
+                    "sunrise": "enabled (always)"
+                }
+            }
+        except ValueError as e:
+            if "already exists" in str(e):
+                raise HTTPException(
+                    status_code=409, 
+                    detail=f"Alarm for time '{request.time}' already exists"
+                )
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to create alarm: {str(e)}"
+            )
 
-                future_time = datetime.now() + timedelta(seconds=seconds)
-                return future_time.strftime("%H:%M")
-            except ValueError as e:
-                if "invalid literal" in str(e):
-                    raise ValueError(
-                        "Invalid relative time format. Use +X for X seconds from now"
-                    )
-                raise e
-
-        else:
-            if not re.match(r"^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$", time_input):
-                raise ValueError("Invalid time format. Use HH:MM or +X")
-            return time_input
+    def _calculate_time_until(self, next_execution: datetime) -> str:
+        """Calculate human-readable time until next execution"""
+        if not next_execution:
+            return None
+            
+        now = datetime.now()
+        delta = next_execution - now
+        
+        if delta.total_seconds() < 0:
+            return "Past due"
+        
+        hours = int(delta.total_seconds() // 3600)
+        minutes = int((delta.total_seconds() % 3600) // 60)
+        
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        
+        return f"{minutes}m"
+    
+    def _generate_alarm_id(self, time_str: str) -> str:
+        """Generate alarm ID from time string"""
+        time_clean = time_str.replace(":", "_")
+        return f"alarm_{time_clean}"

@@ -2,6 +2,13 @@
 import axios from "axios";
 import type { AxiosInstance } from "axios";
 import type { AlarmOptions } from "../types";
+import type {
+  AllAlarmsResponse,
+  CreateAlarmRequest,
+  CreateAlarmResponse,
+  DeleteAlarmResponse,
+  ToggleAlarmResponse,
+} from "./alarm_models";
 
 const API_BASE_URL = "http://192.168.178.64:8000";
 
@@ -17,6 +24,40 @@ export const alarmApi = {
   getOptions: async (): Promise<AlarmOptions> => {
     const response = await api.get("/alarms/options");
     return response.data;
+  },
+
+  getAll: async (): Promise<AllAlarmsResponse> => {
+    const response = await api.get("/alarms/");
+    return response.data;
+  },
+
+  create: async (request: CreateAlarmRequest): Promise<CreateAlarmResponse> => {
+    const response = await api.post("/alarms/", request);
+    return response.data;
+  },
+
+  toggle: async (alarmId: string, active: boolean): Promise<ToggleAlarmResponse> => {
+    const response = await api.put(`/alarms/${alarmId}/toggle`, null, {
+      params: { active },
+    });
+    return response.data;
+  },
+
+  delete: async (alarmId: string): Promise<DeleteAlarmResponse> => {
+    const response = await api.delete(`/alarms/${alarmId}`);
+    return response.data;
+  },
+
+  createByTime: async (time: string): Promise<CreateAlarmResponse> => {
+    return alarmApi.create({ time });
+  },
+
+  activate: async (alarmId: string): Promise<ToggleAlarmResponse> => {
+    return alarmApi.toggle(alarmId, true);
+  },
+
+  deactivate: async (alarmId: string): Promise<ToggleAlarmResponse> => {
+    return alarmApi.toggle(alarmId, false);
   },
 };
 

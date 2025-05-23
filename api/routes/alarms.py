@@ -17,6 +17,52 @@ def get_alarm_service() -> AlarmService:
     return AlarmService()
 
 
+@router.get("/")
+def get_all_alarms(service: AlarmService = Depends(get_alarm_service)):
+    """Get all alarms with their status (active/inactive/scheduled)"""
+    return service.get_all_alarms()
+
+@router.post("/", response_model=CreateAlarmResponse)
+def create_alarm(
+    request: CreateAlarmRequest, service: AlarmService = Depends(get_alarm_service)
+):
+    """Create a new alarm with the specified time"""
+    return service.create_alarm(request)
+
+@router.put("/{alarm_id}/toggle")
+def toggle_alarm(
+    alarm_id: str, 
+    active: bool,
+    service: AlarmService = Depends(get_alarm_service)
+):
+    """Toggle an alarm active/inactive"""
+    return service.toggle_alarm(alarm_id, active)
+
+@router.delete("/{alarm_id}")
+def delete_alarm(
+    alarm_id: str, 
+    service: AlarmService = Depends(get_alarm_service)
+):
+    """Permanently delete an alarm"""
+    return service.delete_alarm(alarm_id)
+
+# Alternative toggle endpoint mit Request Body
+from pydantic import BaseModel
+
+
+class ToggleAlarmRequest(BaseModel):
+    active: bool
+
+@router.put("/alarms/{alarm_id}")
+def toggle_alarm_with_body(
+    alarm_id: str,
+    request: ToggleAlarmRequest,
+    service: AlarmService = Depends(get_alarm_service)
+):
+    """Toggle an alarm active/inactive with request body"""
+    return service.toggle_alarm(alarm_id, request.active)
+
+
 @router.get("/options", response_model=AlarmOptions)
 def get_alarm_options(service: AlarmService = Depends(get_alarm_service)):
     """Get all alarm configuration options"""
@@ -26,7 +72,7 @@ def get_alarm_options(service: AlarmService = Depends(get_alarm_service)):
 @router.post("/play/{sound_id:path}", response_model=PlaySoundResponse)
 def play_sound(sound_id: str, service: AlarmService = Depends(get_alarm_service)):
     """Play a sound using the audio player"""
-    return service.play_sound(sound_id)
+    return service.play_alarm_sound(sound_id)
 
 
 @router.post("/stop", response_model=StopSoundResponse)
@@ -68,27 +114,12 @@ def set_wake_up_sound(
     return service.set_wake_up_sound(request.sound_id)
 
 
-def set_wake_up_sound(
-    request: SoundRequest, service: AlarmService = Depends(get_alarm_service)
-):
-    """Set the global wake-up sound for all alarms"""
-    return service.set_wake_up_sound(request.sound_id)
-
-
 @router.put("/settings/get-up-sound")
 def set_get_up_sound(
     request: SoundRequest, service: AlarmService = Depends(get_alarm_service)
 ):
     """Set the global get-up sound for all alarms"""
     return service.set_get_up_sound(request.sound_id)
-
-
-@router.post("/alarms", response_model=CreateAlarmResponse)
-def create_alarm(
-    request: CreateAlarmRequest, service: AlarmService = Depends(get_alarm_service)
-):
-    """Create a new alarm with the specified time"""
-    return service.create_alarm(request.alarm_id, request.time)
 
 
 @router.delete("/alarms/{alarm_id}", response_model=CancelAlarmResponse)

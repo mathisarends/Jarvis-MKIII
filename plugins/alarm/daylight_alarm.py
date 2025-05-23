@@ -15,46 +15,43 @@ from shared.singleton_meta_class import SingletonMetaClass
 
 class AlarmStage(Enum):
     """Alarm stages"""
-
     WAKE_UP = "wake_up"
     GET_UP = "get_up"
 
 
 @dataclass
-class AlarmSoundConfig:
-    """Configuration for alarm sounds"""
-
-    wake_up_sound_id: str = "wake_up_sounds/wake-up-focus"
-    get_up_sound_id: str = "get_up_sounds/get-up-blossom"
-    volume: float = 1.0
+class AlarmInfo:
+    """Information about an alarm"""
+    alarm_id: str
+    time_str: str  # "07:30"
+    active: bool   # User has enabled this alarm
+    scheduled: bool = False  # System has scheduled this alarm
+    next_execution: Optional[datetime] = None  # When it will next trigger
 
 
 @dataclass
 class AlarmConfig:
-    """Configuration for a single alarm"""
-
+    """Runtime configuration for a scheduled alarm"""
     wake_up_time: float
-    wake_up_timer_duration: int
-    sounds: AlarmSoundConfig = field(default_factory=AlarmSoundConfig)
-    active: bool = True
-    scheduled: bool = False
-    use_sunrise: bool = True
-    max_brightness: float = 75.0
     scheduled_threads: List[threading.Timer] = field(default_factory=list)
 
 
 class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
     """
-    Manages alarms with an efficient scheduling implementation.
+    Manages scheduled alarms with an efficient scheduling implementation.
+    All settings come from AlarmSystem at runtime.
     """
 
     def __init__(self):
-        self._scheduled_alarms: Dict[str, AlarmConfig] = {}
+        self._scheduled_alarms: Dict[str, AlarmConfig] = {}  # Only currently scheduled
         self._scheduler_thread: Optional[threading.Thread] = None
         self._scheduler_lock: threading.Lock = threading.Lock()
         self._running: bool = False
         self._callbacks: Dict[str, List[Callable[[], Any]]] = {}
         self._sound_manager = AlarmSoundManager()
+        
+        # Reference to get current settings
+        self._alarm_system: Optional['AlarmSystem'] = None
 
         # Initialize the external sunrise controller
         self._sunrise_controller = SunriseController.get_instance(
@@ -66,69 +63,43 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
             )
         )
 
-    def schedule_alarm(
-        self,
-        alarm_id: str,
-        time_str: str,
-        wake_up_timer_duration: int = 540,
-        use_sunrise: bool = True,
-        max_brightness: float = 75.0,
-        wake_up_sound_id: Optional[str] = None,
-        get_up_sound_id: Optional[str] = None,
-        volume: float = 1.0,
-    ) -> None:
+    def set_alarm_system_reference(self, alarm_system: 'AlarmSystem') -> None:
+        """Set reference to AlarmSystem for getting current settings"""
+        self._alarm_system = alarm_system
+
+    def schedule_alarm(self, alarm_id: str, time_str: str) -> None:
         """
         Schedules an alarm for a specific time.
-
-        Args:
-            alarm_id: Unique ID for the alarm
-            time_str: Time in "HH:MM" format
-            wake_up_timer_duration: Time in seconds between first and second alarm (default: 9 minutes)
-            use_sunrise: Whether to enable the sunrise simulation
-            max_brightness: Maximum brightness for sunrise (0-100)
-            wake_up_sound_id: Sound ID for the wake-up alarm (default: use default sound)
-            get_up_sound_id: Sound ID for the get-up alarm (default: use default sound)
-            volume: Volume level for alarm sounds (0.0 to 1.0)
+        Settings are fetched from AlarmSystem at execution time.
         """
         with self._scheduler_lock:
             alarm_time = self._parse_time(time_str)
 
-            # Create sound configuration
-            sound_config = AlarmSoundConfig(
-                wake_up_sound_id=wake_up_sound_id
-                or AlarmSoundConfig().wake_up_sound_id,
-                get_up_sound_id=get_up_sound_id or AlarmSoundConfig().get_up_sound_id,
-                volume=volume,
-            )
-
-            alarm_config = AlarmConfig(
-                wake_up_time=alarm_time,
-                wake_up_timer_duration=wake_up_timer_duration,
-                sounds=sound_config,
-                use_sunrise=use_sunrise,
-                max_brightness=max_brightness,
-            )
-
+            alarm_config = AlarmConfig(wake_up_time=alarm_time)
             self._scheduled_alarms[alarm_id] = alarm_config
-
+            
             self._ensure_scheduler_running()
-
             self._schedule_alarm_execution(alarm_id)
 
     def cancel_alarm(self, alarm_id: str) -> None:
-        """Cancels an active alarm."""
+        """Cancels a scheduled alarm."""
         with self._scheduler_lock:
             if alarm_id in self._scheduled_alarms:
                 config = self._scheduled_alarms[alarm_id]
 
+                # Cancel all timers
                 for thread in config.scheduled_threads:
                     if thread.is_alive():
-                        config.active = False
+                        thread.cancel()
 
                 # Stop any running sunrise
                 self._sunrise_controller.stop_sunrise()
 
                 del self._scheduled_alarms[alarm_id]
+
+    def is_scheduled(self, alarm_id: str) -> bool:
+        """Check if alarm is currently scheduled"""
+        return alarm_id in self._scheduled_alarms
 
     def get_wake_up_sound_options(self):
         """Get all available wake-up sound options."""
@@ -159,18 +130,9 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
             self._scheduler_thread.start()
 
     def _scheduler_loop(self) -> None:
-        """
-        Main loop of the scheduler that regularly checks for alarms to be scheduled.
-        This loop only checks infrequently (every 60 seconds) as the actual execution
-        is done using timer threads.
-        """
+        """Main scheduler loop."""
         while self._running:
-            with self._scheduler_lock:
-                for alarm_id, config in self._scheduled_alarms.items():
-                    if not config.scheduled and config.active:
-                        self._schedule_alarm_execution(alarm_id)
-
-            time.sleep(60)
+            time.sleep(60)  # Check every minute
 
     def _schedule_alarm_execution(self, alarm_id: str) -> None:
         """Schedules the execution of an alarm using timers."""
@@ -178,10 +140,10 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
             return
 
         config = self._scheduled_alarms[alarm_id]
-        if not config.active:
-            return
 
-        config.scheduled = True
+        # Get current settings
+        settings = self._alarm_system.get_global_settings() if self._alarm_system else {}
+        wake_up_timer_duration = settings.get('wake_up_timer_duration', 540)
 
         wake_up_time = config.wake_up_time
         delay = max(0, wake_up_time - time.time())
@@ -189,91 +151,85 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
         wake_up_thread = threading.Timer(
             delay,
             self._execute_alarm,
-            args=[config.sounds.wake_up_sound_id, alarm_id, AlarmStage.WAKE_UP],
+            args=[alarm_id, AlarmStage.WAKE_UP],
         )
         wake_up_thread.daemon = True
         wake_up_thread.start()
 
-        get_up_time = wake_up_time + config.wake_up_timer_duration
+        get_up_time = wake_up_time + wake_up_timer_duration
         delay_get_up = max(0, get_up_time - time.time())
 
         get_up_thread = threading.Timer(
             delay_get_up,
             self._execute_alarm,
-            args=[config.sounds.get_up_sound_id, alarm_id, AlarmStage.GET_UP],
+            args=[alarm_id, AlarmStage.GET_UP],
         )
         get_up_thread.daemon = True
         get_up_thread.start()
 
         config.scheduled_threads = [wake_up_thread, get_up_thread]
 
-        print(
-            f"Alarm scheduled: WAKE_UP in {delay:.1f} seconds, GET_UP in {delay_get_up:.1f} seconds"
-        )
+        print(f"Alarm {alarm_id} scheduled: WAKE_UP in {delay:.1f}s, GET_UP in {delay_get_up:.1f}s")
 
-    def _execute_alarm(self, sound_id: str, alarm_id: str, stage: AlarmStage) -> None:
-        """Executes an alarm and plays the corresponding sound."""
+    def _execute_alarm(self, alarm_id: str, stage: AlarmStage) -> None:
+        """Executes an alarm using CURRENT settings."""
         if alarm_id not in self._scheduled_alarms:
             return
 
-        config = self._scheduled_alarms[alarm_id]
-
-        if not config.active:
+        # Get CURRENT settings
+        if not self._alarm_system:
+            self.logger.error("No AlarmSystem reference available")
             return
 
-        self.logger.info(f"Alarm triggered: {stage.value} with sound {sound_id}")
+        settings = self._alarm_system.get_global_settings()
+        
+        # Select sound based on stage
+        sound_id = settings['wake_up_sound_id'] if stage == AlarmStage.WAKE_UP else settings['get_up_sound_id']
 
-        if stage == AlarmStage.WAKE_UP and config.use_sunrise:
+        self.logger.info(f"Alarm {alarm_id} triggered: {stage.value} with sound {sound_id}")
+
+        # Start sunrise for wake-up stage
+        if stage == AlarmStage.WAKE_UP and settings['use_sunrise']:
             self._sunrise_controller.start_sunrise(
-                duration_seconds=config.wake_up_timer_duration,
-                max_brightness=config.max_brightness,
+                duration_seconds=settings['wake_up_timer_duration'],
+                max_brightness=settings['max_brightness'],
             )
 
-        # If no specific callbacks registered, play the sound directly with the specified volume
-        if sound_id not in self._callbacks or not self._callbacks[sound_id]:
-            self.logger.info(
-                f"Playing sound {sound_id} with volume {config.sounds.volume:.2f}"
-            )
-            AudioPlayerFactory.get_shared_instance().play_sound(
-                sound_id, volume=config.sounds.volume
-            )
+        # Play sound with current volume
+        AudioPlayerFactory.get_shared_instance().play_sound(
+            sound_id, volume=settings['volume']
+        )
+
+        # After alarm execution, mark it for rescheduling tomorrow if it's a recurring alarm
+        if stage == AlarmStage.GET_UP:  # After the final stage
+            self._alarm_system.reschedule_alarm_for_tomorrow(alarm_id)
 
 
 @dataclass
 class GlobalAlarmSettings:
     """Global settings for all alarms"""
-
-    wake_up_timer_duration: int = 540  # 9 minutes, always fixed
-    use_sunrise: bool = True  # Always enabled
-    max_brightness: float = 75.0  # Global brightness for all alarms
-    volume: float = 0.5  # Global volume for all alarms
-    wake_up_sound_id: str = "wake_up_sounds/wake-up-focus"  # Global wake-up sound
-    get_up_sound_id: str = "get_up_sounds/get-up-blossom"  # Global get-up sound
+    wake_up_timer_duration: int = 540  # 9 minutes
+    use_sunrise: bool = True
+    max_brightness: float = 75.0
+    volume: float = 0.5
+    wake_up_sound_id: str = "wake_up_sounds/wake-up-focus"
+    get_up_sound_id: str = "get_up_sounds/get-up-blossom"
 
 
 class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
     """
-    Simplified alarm system with global settings.
-    All alarms use the same config, only differ by time.
+    Enhanced alarm system with active/inactive management.
+    Supports multiple persistent alarms that can be toggled on/off.
     """
 
     def __init__(self):
         self._alarm_manager: AlarmManager = AlarmManager.get_instance()
         self._settings: GlobalAlarmSettings = GlobalAlarmSettings()
-        self._active_alarms: Set[str] = set()
+        self._all_alarms: Dict[str, AlarmInfo] = {}  # All alarms (active and inactive)
         self._sound_manager = AlarmSoundManager()
-
-    @property
-    def wake_up_timer_duration(self) -> int:
-        """Returns the fixed duration between first and second alarm (9 minutes)."""
-        return self._settings.wake_up_timer_duration
-
-    @wake_up_timer_duration.setter
-    def wake_up_timer_duration(self, duration: int) -> None:
-        """Sets the duration - but it's always 9 minutes for consistency."""
-        self.logger.warning(
-            "Wake-up timer duration is fixed at 9 minutes (540 seconds)"
-        )
+        
+        # Set reference so AlarmManager can get current settings
+        self._alarm_manager.set_alarm_system_reference(self)
 
     @property
     def max_brightness(self) -> float:
@@ -302,7 +258,6 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
 
         old_value = self._settings.max_brightness
         self._settings.max_brightness = brightness
-
         self.logger.info(f"Global brightness updated: {old_value} → {brightness}")
 
     def set_volume(self, volume: float) -> None:
@@ -312,7 +267,6 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
 
         old_value = self._settings.volume
         self._settings.volume = volume
-
         self.logger.info(f"Global volume updated: {old_value} → {volume}")
 
     def set_wake_up_sound(self, sound_id: str) -> None:
@@ -322,7 +276,6 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
 
         old_value = self._settings.wake_up_sound_id
         self._settings.wake_up_sound_id = sound_id
-
         self.logger.info(f"Global wake-up sound updated: {old_value} → {sound_id}")
 
     def set_get_up_sound(self, sound_id: str) -> None:
@@ -332,33 +285,7 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
 
         old_value = self._settings.get_up_sound_id
         self._settings.get_up_sound_id = sound_id
-
         self.logger.info(f"Global get-up sound updated: {old_value} → {sound_id}")
-
-    def get_global_settings(self) -> dict:
-        """Get all global settings as a dictionary (useful for API responses)."""
-        return {
-            "wake_up_timer_duration": self._settings.wake_up_timer_duration,
-            "use_sunrise": self._settings.use_sunrise,
-            "max_brightness": self._settings.max_brightness,
-            "volume": self._settings.volume,
-            "wake_up_sound_id": self._settings.wake_up_sound_id,
-            "get_up_sound_id": self._settings.get_up_sound_id,
-        }
-
-    def update_global_settings(self, settings: dict) -> None:
-        """Update multiple global settings at once."""
-        if "max_brightness" in settings:
-            self.set_max_brightness(settings["max_brightness"])
-
-        if "volume" in settings:
-            self.set_volume(settings["volume"])
-
-        if "wake_up_sound_id" in settings:
-            self.set_wake_up_sound(settings["wake_up_sound_id"])
-
-        if "get_up_sound_id" in settings:
-            self.set_get_up_sound(settings["get_up_sound_id"])
 
     def get_wake_up_sound_options(self):
         """Get all available wake-up sound options."""
@@ -368,50 +295,118 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
         """Get all available get-up sound options."""
         return self._alarm_manager.get_get_up_sound_options()
 
-    def schedule_alarm(self, alarm_id: str, time_str: str) -> None:
-        """
-        Schedule an alarm with global settings.
-        All alarms use the same config, only time differs.
+    def get_global_settings(self) -> dict:
+        """Get all global settings as a dictionary."""
+        return {
+            "wake_up_timer_duration": self._settings.wake_up_timer_duration,
+            "use_sunrise": self._settings.use_sunrise,
+            "max_brightness": self._settings.max_brightness,
+            "volume": self._settings.volume,
+            "wake_up_sound_id": self._settings.wake_up_sound_id,
+            "get_up_sound_id": self._settings.get_up_sound_id,
+        }
 
-        Args:
-            alarm_id: Unique ID for the alarm
-            time_str: Time in "HH:MM" format
-        """
-        self.logger.info(
-            "Scheduling alarm '%s' at %s with global settings:", alarm_id, time_str
-        )
-        self.logger.info(
-            "  - Wake-up timer duration: %d seconds (fixed)",
-            self._settings.wake_up_timer_duration,
-        )
-        self.logger.info("  - Wake-up sound: %s", self._settings.wake_up_sound_id)
-        self.logger.info("  - Get-up sound: %s", self._settings.get_up_sound_id)
-        self.logger.info("  - Sunrise: %s (always enabled)", "Enabled")
-        self.logger.info(
-            "  - Maximum brightness: %.1f%%", self._settings.max_brightness
-        )
-        self.logger.info("  - Volume: %.2f", self._settings.volume)
+    def create_alarm(self, alarm_id: str, time_str: str) -> AlarmInfo:
+        """Create a new alarm (active by default)"""
+        if alarm_id in self._all_alarms:
+            raise ValueError(f"Alarm {alarm_id} already exists")
 
-        # Use global settings for all parameters
-        self._alarm_manager.schedule_alarm(
+        alarm_info = AlarmInfo(
             alarm_id=alarm_id,
             time_str=time_str,
-            wake_up_timer_duration=self._settings.wake_up_timer_duration,  # Always 9 minutes
-            use_sunrise=self._settings.use_sunrise,  # Always True
-            max_brightness=self._settings.max_brightness,  # Global setting
-            wake_up_sound_id=self._settings.wake_up_sound_id,  # Global setting
-            get_up_sound_id=self._settings.get_up_sound_id,  # Global setting
-            volume=self._settings.volume,  # Global setting
+            active=True
         )
 
-        self._active_alarms.add(alarm_id)
-        self.logger.info(
-            "Alarm '%s' successfully scheduled with global config", alarm_id
-        )
+        self._all_alarms[alarm_id] = alarm_info
+        self._schedule_if_needed(alarm_info)
+        
+        self.logger.info(f"Created alarm {alarm_id} for {time_str}")
+        return alarm_info
 
-    def cancel_alarm(self, alarm_id: str) -> None:
-        """Cancel an active alarm."""
-        self.logger.info(f"Canceling alarm: {alarm_id}")
+    def get_all_alarms(self) -> List[AlarmInfo]:
+        """Get all alarms with their status"""
+        alarms = []
+        for alarm_info in self._all_alarms.values():
+            # Update scheduled status
+            alarm_info.scheduled = self._alarm_manager.is_scheduled(alarm_info.alarm_id)
+            
+            # Calculate next execution time
+            if alarm_info.active:
+                alarm_info.next_execution = self._calculate_next_execution(alarm_info.time_str)
+            else:
+                alarm_info.next_execution = None
+                
+            alarms.append(alarm_info)
+        
+        # Sort by time
+        return sorted(alarms, key=lambda a: a.time_str)
+
+    def toggle_alarm(self, alarm_id: str, active: bool) -> AlarmInfo:
+        """Toggle an alarm active/inactive"""
+        if alarm_id not in self._all_alarms:
+            raise ValueError(f"Alarm {alarm_id} not found")
+
+        alarm_info = self._all_alarms[alarm_id]
+        old_active = alarm_info.active
+        alarm_info.active = active
+
+        if active and not old_active:
+            # Activating alarm
+            self._schedule_if_needed(alarm_info)
+            self.logger.info(f"Activated alarm {alarm_id}")
+        elif not active and old_active:
+            # Deactivating alarm
+            self._alarm_manager.cancel_alarm(alarm_id)
+            alarm_info.scheduled = False
+            self.logger.info(f"Deactivated alarm {alarm_id}")
+
+        return alarm_info
+
+    def delete_alarm(self, alarm_id: str) -> None:
+        """Permanently delete an alarm"""
+        if alarm_id not in self._all_alarms:
+            raise ValueError(f"Alarm {alarm_id} not found")
+
+        # Cancel if scheduled
         self._alarm_manager.cancel_alarm(alarm_id)
-        self._active_alarms.discard(alarm_id)
-        self.logger.info(f"Alarm '{alarm_id}' successfully canceled")
+        
+        # Remove from storage
+        del self._all_alarms[alarm_id]
+        self.logger.info(f"Deleted alarm {alarm_id}")
+
+    def reschedule_alarm_for_tomorrow(self, alarm_id: str) -> None:
+        """Reschedule an alarm for tomorrow (called after execution)"""
+        if alarm_id in self._all_alarms:
+            alarm_info = self._all_alarms[alarm_id]
+            if alarm_info.active:
+                # Reschedule for tomorrow
+                self._alarm_manager.cancel_alarm(alarm_id)
+                self._schedule_if_needed(alarm_info)
+                self.logger.info(f"Rescheduled alarm {alarm_id} for tomorrow")
+
+    def _schedule_if_needed(self, alarm_info: AlarmInfo) -> None:
+        """Schedule alarm if it should be active"""
+        if not alarm_info.active:
+            return
+
+        # Check if it's for today and hasn't passed yet
+        next_time = self._calculate_next_execution(alarm_info.time_str)
+        
+        if next_time:
+            self._alarm_manager.schedule_alarm(alarm_info.alarm_id, alarm_info.time_str)
+            alarm_info.scheduled = True
+            alarm_info.next_execution = next_time
+
+    def _calculate_next_execution(self, time_str: str) -> Optional[datetime]:
+        """Calculate when this alarm will next execute"""
+        try:
+            hour, minute = map(int, time_str.split(":"))
+            now = datetime.now()
+            alarm_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            if alarm_time <= now:
+                alarm_time += timedelta(days=1)
+
+            return alarm_time
+        except:
+            return None

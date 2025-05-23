@@ -1,7 +1,8 @@
 import re
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, validator
 
 
 class SoundOption(BaseModel):
@@ -99,12 +100,40 @@ class SoundRequest(BaseModel):
 class CreateAlarmRequest(BaseModel):
     """Request model for creating an alarm"""
 
-    alarm_id: str = Field(
-        ..., min_length=1, max_length=50, description="Unique identifier for the alarm"
-    )
-    time: str = Field(
-        ..., description="Time in HH:MM format or +X for X seconds from now"
-    )
+    time: Annotated[
+        str, Field(description="Time in HH:MM format or +X for X seconds from now")
+    ]
+
+    @field_validator("time")
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        """Validate and process time input"""
+        if not v or not v.strip():
+            raise ValueError("Time cannot be empty")
+
+        v = v.strip()
+
+        if v.startswith("+"):
+            try:
+                seconds = int(v[1:])
+                if seconds <= 0 or seconds > 86400:
+                    raise ValueError("Seconds must be between 1 and 86400")
+
+                future_time = datetime.now() + timedelta(seconds=seconds)
+                return future_time.strftime("%H:%M")
+            except ValueError as e:
+                if "invalid literal" in str(e):
+                    raise ValueError(
+                        "Invalid relative time format. Use +X for X seconds from now"
+                    )
+                raise e
+
+        else:
+            if not re.match(r"^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$", v):
+                raise ValueError(
+                    "Invalid time format. Use HH:MM (24-hour) or +X (seconds from now)"
+                )
+            return v
 
 
 class CreateAlarmResponse(BaseModel):
