@@ -35,7 +35,8 @@ def set_volume(
     audio_player: AudioPlayer = Depends(get_audio_player),
 ):
     """Set the global volume for all alarms"""
-    audio_player.play_sound("sound_check", volume=request.volume)
+    audio_player.set_volume_level(request.volume)   
+    audio_player.play_sound("sound_check")
     return service.set_volume(request.volume)
 
 

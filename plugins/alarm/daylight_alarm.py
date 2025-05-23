@@ -209,7 +209,7 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
             )
 
         AudioPlayerFactory.get_shared_instance().play_sound(
-            sound_id, volume=settings["volume"]
+            sound_id
         )
 
         if stage == AlarmStage.GET_UP:

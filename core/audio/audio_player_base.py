@@ -31,7 +31,7 @@ class AudioPlayer(ABC, LoggingMixin):
         """Stop the currently playing sound"""
 
     @abstractmethod
-    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
+    def play_sound(self, sound_name: str) -> bool:
         """
         Play a sound file by name.
 

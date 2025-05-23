@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Plus } from "lucide-react";
+import { Clock, Plus } from "lucide-react";
 import SleepScheduleItem from "../components/SleepScheduleItem";
 import { useHeader } from "../contexts/headerContext";
 import TimePickerModal from "../components/TimePickerModal";
 import { alarmApi } from "../api/alarmApi";
 import type { AlarmStatus } from "../api/alarmModels";
-import AlarmOverlay from "../components/alarmOverlay";
 
 const AlarmScreen: React.FC = () => {
   const { updateConfig, resetConfig } = useHeader();
@@ -138,6 +137,17 @@ const AlarmScreen: React.FC = () => {
         </div>
       )}
 
+      {/* Empty State */}
+      {!loading && !error && alarms.length === 0 && (
+        <div className="w-full p-6 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="flex items-center mb-3">
+            <Clock className="h-5 w-5 text-gray-400 mr-3" />
+            <h3 className="text-lg font-medium text-gray-800">Noch keine Alarme eingerichtet</h3>
+          </div>
+          <p className="text-gray-600 text-sm">Erstelle deinen ersten Alarm über das Plus-Symbol oben rechts.</p>
+        </div>
+      )}
+
       {/* Grid Layout for Alarms */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl">
         {alarms.map((alarm) => (
@@ -161,7 +171,6 @@ const AlarmScreen: React.FC = () => {
         }}
         onSave={handleAddAlarm}
       />
-
     </div>
   );
 };

@@ -511,10 +511,9 @@ class SonosPlayer(AudioPlayer):
             self.logger.error("Error adding audio chunk: %s", e)
 
     @override
-    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
-        """Play a sound file with optional volume override"""
+    def play_sound(self, sound_name: str) -> bool:
+        """Play a sound file"""
         try:
-            # Determine path to sound file
             if not sound_name.endswith(".mp3"):
                 sound_name += ".mp3"
 
@@ -536,39 +535,13 @@ class SonosPlayer(AudioPlayer):
 
             # Play on Sonos directly (not using queue for static sounds)
             if self._sonos_device:
-                # Store current volume if we need to change it temporarily
-                original_volume = None
-                
-                if volume is not None:
-                    try:
-                        original_volume = self._sonos_device.volume
-                        temp_volume = int(max(0.0, min(1.0, volume)) * 100)
-                        self._sonos_device.volume = temp_volume
-                        self.logger.debug("Set temporary volume to %d%% for sound playback", temp_volume)
-                    except Exception as e:
-                        self.logger.warning("Error setting temporary volume: %s", e)
-                        original_volume = None
-
                 try:
                     self._sonos_device.stop()
-
                     self._sonos_device.play_uri(sound_url)
-                    
-                    result = True
+                    return True
                 except Exception as e:
                     self.logger.error("Error playing sound on Sonos: %s", e)
-                    result = False
-                finally:
-                    if original_volume is not None:
-                        try:
-                            import time
-                            time.sleep(0.1)
-                            self._sonos_device.volume = original_volume
-                            self.logger.debug("Restored original volume to %d%%", original_volume)
-                        except Exception as e:
-                            self.logger.warning("Error restoring original volume: %s", e)
-                
-                return result
+                    return False
             else:
                 self.logger.warning("No Sonos device connected")
                 return False

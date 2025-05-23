@@ -177,7 +177,7 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
         self.logger.info("Current sound playback stopped")
 
     @override
-    def play_sound(self, sound_name: str, volume: Optional[float] = None) -> bool:
+    def play_sound(self, sound_name: str) -> bool:
         """
         Play a sound file asynchronously (non-blocking).
 
@@ -199,9 +199,6 @@ class PyAudioPlayer(AudioPlayer, LoggingMixin):
                 pygame.mixer.init()
 
             sound = pygame.mixer.Sound(sound_path)
-
-            actual_volume = volume if volume is not None else self.volume
-            sound.set_volume(actual_volume)
 
             sound.play()
 
