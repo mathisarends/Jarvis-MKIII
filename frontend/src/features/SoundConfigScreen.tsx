@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Volume2, Sun } from "lucide-react";
+import { Volume2 } from "lucide-react";
 import Slider from "../components/Slider";
 import { SoundSelector } from "../components/SoundSelector";
 import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
@@ -9,13 +9,10 @@ import type { AudioSystem } from "../api/audioSystemModels";
 import { AudioSystemSelector } from "../components/audioSystemSelector";
 import Spinner from "../components/Spinner";
 import { useToast } from "../contexts/ToastContext";
-import LightSceneSection from "../components/LightSceneSelection";
 
 const SoundConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [audioSystems, setAudioSystems] = useState<AudioSystem[]>([]);
-  const [availableScenes, setAvailableScenes] = useState<string[]>([]);
-  const [activeScene, setActiveScene] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { error: showError } = useToast();
 
@@ -31,7 +28,7 @@ const SoundConfigScreen: React.FC = () => {
       try {
         setLoading(true);
 
-        const [options, settings, audioSystemsResponse, scenes] = await Promise.all([
+        const [options, settings, audioSystemsResponse] = await Promise.all([
           alarmApi.getOptions(),
           settingsApi.getGlobal(),
           audioSystemApi.getSystems(),
@@ -40,7 +37,6 @@ const SoundConfigScreen: React.FC = () => {
 
         setAlarmOptions(options);
         setAudioSystems(audioSystemsResponse.systems);
-        setAvailableScenes(scenes);
         setGlobalSettings({
           brightness: settings.max_brightness,
           volume: settings.volume, // API gibt 0-1 zurück, das ist korrekt
@@ -57,15 +53,6 @@ const SoundConfigScreen: React.FC = () => {
 
     loadData();
   }, []);
-
-  const onBrightnessChangeEnd = async (value: number) => {
-    try {
-      await settingsApi.setBrightness(value);
-      setGlobalSettings((prev) => ({ ...prev, brightness: value }));
-    } catch (error) {
-      console.error("❌ Failed to save brightness:", error);
-    }
-  };
 
   const onWakeUpSoundChange = async (soundId: string) => {
     try {
@@ -109,22 +96,6 @@ const SoundConfigScreen: React.FC = () => {
       }
     }
   };
-
-  const onSceneSelect = async (sceneName: string) => {
-    try {
-      setActiveScene(sceneName);
-      await settingsApi.activateSceneTemporarily(sceneName, 8);
-    } catch (error) {
-      console.error("❌ Failed to activate scene:", error);
-      setActiveScene(null);
-    }
-  };
-
-  // Live updates (für smooth UX)
-  const onBrightnessChange = (value: number) => {
-    setGlobalSettings((prev) => ({ ...prev, brightness: value }));
-  };
-
   const onVolumeChange = (value: number) => {
     // Umrechnung: Slider-Wert (0-100) → API-Wert (0-1)
     const apiValue = value / 100;
@@ -155,18 +126,6 @@ const SoundConfigScreen: React.FC = () => {
     <SoundPlaybackProvider>
       <div className="flex flex-col gap-6">
         <AudioSystemSelector systems={audioSystems} onSystemChange={onAudioSystemChange} />
-
-        <LightSceneSection availableScenes={availableScenes} activeScene={activeScene} onSceneSelect={onSceneSelect} />
-
-        <Slider
-          icon={<Sun className="w-4 h-4 text-gray-600" />}
-          label="Lamp Brightness"
-          min={alarmOptions.brightness_range.min}
-          max={alarmOptions.brightness_range.max}
-          value={globalSettings.brightness}
-          onChange={onBrightnessChange}
-          onChangeEnd={onBrightnessChangeEnd}
-        />
 
         <Slider
           icon={<Volume2 className="w-4 h-4 text-gray-600" />}
