@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Volume2, Sun } from "lucide-react";
-import Slider from "../components/Slider"; // ← Direkter Import
+import Slider from "../components/Slider";
 import { SoundSelector } from "../components/SoundSelector";
 import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
 import type { AlarmOptions } from "../types";
 import { alarmApi, settingsApi, audioSystemApi } from "../api/alarmApi";
 import type { AudioSystem } from "../api/audioSystemModels";
 import { AudioSystemSelector } from "../components/audioSystemSelector";
-import LightSceneCard from "../components/LightSceneCard";
 import Spinner from "../components/Spinner";
 import { useToast } from "../contexts/ToastContext";
+import LightSceneSection from "../components/LightSceneSelection";
 
-const ConfigScreen: React.FC = () => {
+const SoundConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [audioSystems, setAudioSystems] = useState<AudioSystem[]>([]);
   const [availableScenes, setAvailableScenes] = useState<string[]>([]);
@@ -154,32 +154,10 @@ const ConfigScreen: React.FC = () => {
   return (
     <SoundPlaybackProvider>
       <div className="flex flex-col gap-6">
-        {/* Audio System Selection */}
         <AudioSystemSelector systems={audioSystems} onSystemChange={onAudioSystemChange} />
 
-        {/* Light Scenes */}
-        {availableScenes.length > 0 && (
-          <div className="w-full">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-800">Lichtszenen</h3>
-              {activeScene && (
-                <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">Aktiv: {activeScene}</div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {availableScenes.map((sceneName) => (
-                <LightSceneCard
-                  key={sceneName}
-                  sceneName={sceneName}
-                  isActive={activeScene === sceneName}
-                  onClick={() => onSceneSelect(sceneName)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        <LightSceneSection availableScenes={availableScenes} activeScene={activeScene} onSceneSelect={onSceneSelect} />
 
-        {/* Brightness and Volume Controls - FIXED */}
         <Slider
           icon={<Sun className="w-4 h-4 text-gray-600" />}
           label="Lamp Brightness"
@@ -200,7 +178,6 @@ const ConfigScreen: React.FC = () => {
           onChangeEnd={onVolumeChangeEnd}
         />
 
-        {/* Sound Selectors */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
           <SoundSelector
             title="Wake Up Sounds"
@@ -221,4 +198,4 @@ const ConfigScreen: React.FC = () => {
   );
 };
 
-export default ConfigScreen;
+export default SoundConfigScreen;

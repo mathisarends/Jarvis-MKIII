@@ -1,7 +1,8 @@
 import React from "react";
-import HomeScreen from "../features/homeScreen";
+import { Home, AlarmClock, Lightbulb, Volume2 } from "lucide-react";
 import AlarmScreen from "../features/alarmScreen";
-import ConfigScreen from "../features/configScreen";
+import LightConfigScreen from "../features/LightConfigScreen";
+import SoundConfigScreen from "../features/SoundConfigScreen";
 
 export interface RouteConfig {
   path: string;
@@ -9,31 +10,30 @@ export interface RouteConfig {
   title: string;
   navPath?: string;
   showInNavbar?: boolean;
-  icon?: string;
+  icon?: React.ReactNode;
 }
 
 export const routes: RouteConfig[] = [
   {
     path: "/",
-    element: <HomeScreen />,
-    title: "Home",
-    navPath: "/home",
-    showInNavbar: true,
-    icon: "home-icon",
-  },
-  {
-    path: "/alarm",
     element: <AlarmScreen />,
     title: "Wecker",
     showInNavbar: true,
-    icon: "alarm-icon",
+    icon: <AlarmClock size={22} />,
   },
   {
-    path: "/config",
-    element: <ConfigScreen />,
-    title: "Konfiguration",
+    path: "/sound-config",
+    element: <SoundConfigScreen />,
+    title: "Sound",
     showInNavbar: true,
-    icon: "settings-icon",
+    icon: <Volume2 size={22} />,
+  },
+  {
+    path: "/light-config",
+    element: <LightConfigScreen />,
+    title: "Licht",
+    showInNavbar: true,
+    icon: <Lightbulb size={22} />,
   },
 ];
 
