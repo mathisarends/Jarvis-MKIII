@@ -5,13 +5,9 @@ from datetime import datetime
 from fastapi import HTTPException
 
 from api.dependencies.audio import get_audio_player
-from api.models.alarm_models import (
-    AlarmOptions,
-    BrightnessRange,
-    CreateAlarmRequest,
-    SoundOption,
-    VolumeRange,
-)
+from api.models.alarm_models import (AlarmOptions, BrightnessRange,
+                                     CreateAlarmRequest, SoundOption,
+                                     VolumeRange)
 from plugins.alarm.daylight_alarm import AlarmSystem
 
 

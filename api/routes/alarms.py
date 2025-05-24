@@ -59,7 +59,7 @@ def stop_sound(service: AlarmService = Depends(get_alarm_service)):
     return service.stop_sound()
 
 
-@alarm_router.delete("/alarms/{alarm_id}", response_model=CancelAlarmResponse)
+@alarm_router.delete("/{alarm_id}", response_model=CancelAlarmResponse)
 def cancel_alarm(alarm_id: str, service: AlarmService = Depends(get_alarm_service)):
     """Cancel an existing alarm by its ID"""
     return service.cancel_alarm(alarm_id)

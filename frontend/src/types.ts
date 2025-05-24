@@ -26,4 +26,4 @@ export interface AlarmOptions {
     max: number;
     default: number;
   };
-} 
+}

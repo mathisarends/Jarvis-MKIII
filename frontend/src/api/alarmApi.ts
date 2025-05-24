@@ -116,6 +116,11 @@ export const settingsApi = {
     });
     return response.data;
   },
+
+  getSceneOptions: async (): Promise<string[]> => {
+    const response = await api.get("/settings/available-scenes");
+    return response.data;
+  },
 };
 
 export const audioSystemApi = {

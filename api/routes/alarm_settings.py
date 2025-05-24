@@ -4,6 +4,7 @@ from api.dependencies.audio import get_audio_player
 from api.models.alarm_models import (BrightnessRequest, SoundRequest,
                                      VolumeRequest)
 from api.services.alarm_service import AlarmService
+from api.services.hue_service import HueService
 from core.audio.audio_player_base import AudioPlayer
 
 alarm_settings_router = APIRouter()
@@ -13,6 +14,18 @@ def get_alarm_service() -> AlarmService:
     """Dependency injection for alarm service"""
     return AlarmService()
 
+
+def get_hue_service() -> HueService:
+    """Dependency injection for Hue service"""
+    return HueService()
+
+@alarm_settings_router.get("/available-scenes")
+async def get_available_scenes(
+    room_name: str = "Zimmer 1",
+    hue_service: HueService = Depends(get_hue_service),
+):
+    """Get all available scenes for the configured room"""
+    return await hue_service.get_available_scenes(room_name)
 
 @alarm_settings_router.get("/")
 def get_global_settings(service: AlarmService = Depends(get_alarm_service)):

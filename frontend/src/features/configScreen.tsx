@@ -6,10 +6,13 @@ import type { AlarmOptions } from "../types";
 import { alarmApi, settingsApi, audioSystemApi } from "../api/alarmApi";
 import type { AudioSystem } from "../api/audioSystemModels";
 import { AudioSystemSelector } from "../components/audioSystemSelector";
+import LightSceneCard from "../components/LightSceneCard";
 
 const ConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [audioSystems, setAudioSystems] = useState<AudioSystem[]>([]);
+  const [availableScenes, setAvailableScenes] = useState<string[]>([]);
+  const [activeScene, setActiveScene] = useState<string | null>(null); // ← Neuer State für aktive Szene
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,20 +30,26 @@ const ConfigScreen: React.FC = () => {
         setError(null);
 
         // ✅ Parallel loading mit allen APIs
-        const [options, settings, audioSystemsResponse] = await Promise.all([
+        const [options, settings, audioSystemsResponse, scenes] = await Promise.all([
           alarmApi.getOptions(),
           settingsApi.getGlobal(),
           audioSystemApi.getSystems(),
+          settingsApi.getSceneOptions(),
         ]);
 
         setAlarmOptions(options);
         setAudioSystems(audioSystemsResponse.systems);
+        setAvailableScenes(scenes);
         setGlobalSettings({
           brightness: settings.max_brightness,
           volume: settings.volume,
           wakeUpSound: settings.wake_up_sound_id,
           getUpSound: settings.get_up_sound_id,
         });
+
+        // TODO: Hier würden Sie die aktuell aktive Szene vom Backend laden
+        // const currentScene = await settingsApi.getCurrentScene();
+        // setActiveScene(currentScene);
       } catch (err) {
         setError("Fehler beim Laden der Daten");
         console.error("Error loading data:", err);
@@ -92,7 +101,6 @@ const ConfigScreen: React.FC = () => {
     try {
       await audioSystemApi.switchSystem(systemId);
 
-      // Update local state
       setAudioSystems((prev) =>
         prev.map((system) => ({
           ...system,
@@ -100,19 +108,37 @@ const ConfigScreen: React.FC = () => {
         }))
       );
 
-      // Reload audio systems to get server state
       const response = await audioSystemApi.getSystems();
       setAudioSystems(response.systems);
     } catch (error) {
       console.error("❌ Failed to switch audio system:", error);
 
-      // Reload on error to sync with server
       try {
         const response = await audioSystemApi.getSystems();
         setAudioSystems(response.systems);
       } catch (reloadError) {
         console.error("❌ Failed to reload audio systems:", reloadError);
       }
+    }
+  };
+
+  // ← Verbesserte Handler-Funktion für Szenen mit active state
+  const onSceneSelect = async (sceneName: string) => {
+    try {
+      // Optimistic update - sofort UI aktualisieren
+      setActiveScene(sceneName);
+
+      console.log(`🌟 Szene ausgewählt: ${sceneName}`);
+
+      // TODO: Hier würden Sie die API aufrufen, um die Szene zu aktivieren
+      // await settingsApi.setActiveScene(sceneName);
+
+      // Temporary: Nach 2 Sekunden wieder deaktivieren (nur für Demo)
+      // setTimeout(() => setActiveScene(null), 2000);
+    } catch (error) {
+      console.error("❌ Failed to activate scene:", error);
+      // Bei Fehler: Active state zurücksetzen
+      setActiveScene(null);
     }
   };
 
@@ -158,10 +184,33 @@ const ConfigScreen: React.FC = () => {
 
   return (
     <SoundPlaybackProvider>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         {/* Audio System Selection */}
         <AudioSystemSelector systems={audioSystems} onSystemChange={onAudioSystemChange} />
 
+        {/* Light Scenes */}
+        {availableScenes.length > 0 && (
+          <div className="w-full">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-800 ">Lichtszenen</h3>
+              {activeScene && (
+                <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">Aktiv: {activeScene}</div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {availableScenes.map((sceneName) => (
+                <LightSceneCard
+                  key={sceneName}
+                  sceneName={sceneName}
+                  isActive={activeScene === sceneName}
+                  onClick={() => onSceneSelect(sceneName)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Brightness and Volume Controls */}
         <BrightnessSlider
           min={alarmOptions.brightness_range.min}
           max={alarmOptions.brightness_range.max}
