@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import Dict, List, Optional
@@ -44,6 +45,31 @@ class HueService:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to get scenes: {str(e)}"
+            )
+            
+    async def temporarily_activate_scene(
+        self, scene_name: str, duration: int = 8
+    ) -> None:
+        """Temporarily activate a scene for a specified duration"""
+        if not self.groups_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="Hue Bridge not available"
+            )
+        
+        try:
+            room_controller = await self.groups_manager.get_controller("Zimmer 1")
+            saved_state = await room_controller.save_state("previous_scene")
+            await room_controller.activate_scene(scene_name)
+            
+            await asyncio.sleep(duration)
+            
+            await room_controller.restore_state(saved_state)
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to activate scene: {str(e)}"
             )
     
     def get_current_wake_up_scene(self) -> Optional[str]:

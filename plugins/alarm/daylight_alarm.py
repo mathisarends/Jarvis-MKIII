@@ -46,7 +46,7 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
     """
 
     def __init__(self):
-        self._scheduled_alarms: Dict[str, AlarmConfig] = {}  # Only currently scheduled
+        self._scheduled_alarms: Dict[str, AlarmConfig] = {}
         self._scheduler_thread: Optional[threading.Thread] = None
         self._scheduler_lock: threading.Lock = threading.Lock()
         self._running: bool = False
@@ -56,33 +56,29 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
         # Reference to get current settings
         self._alarm_system: Optional["AlarmSystem"] = None
 
-        # Initialize the external sunrise controller
-        self._sunrise_controller = SunriseController.get_instance(
-            SunriseConfig(
-                scene_name="Majestätischer Morgen",
-                room_name="Zimmer 1",
-                start_brightness_percent=0.01,
-                max_brightness_percent=75.0,
-            )
-        )
+        # ✅ Sunrise controller wird jetzt dynamisch erstellt
+        self._sunrise_controller: Optional[SunriseController] = None
 
     def set_alarm_system_reference(self, alarm_system: "AlarmSystem") -> None:
         """Set reference to AlarmSystem for getting current settings"""
         self._alarm_system = alarm_system
 
-    def schedule_alarm(self, alarm_id: str, time_str: str) -> None:
-        """
-        Schedules an alarm for a specific time.
-        Settings are fetched from AlarmSystem at execution time.
-        """
-        with self._scheduler_lock:
-            alarm_time = self._parse_time(time_str)
-
-            alarm_config = AlarmConfig(wake_up_time=alarm_time)
-            self._scheduled_alarms[alarm_id] = alarm_config
-
-            self._ensure_scheduler_running()
-            self._schedule_alarm_execution(alarm_id)
+    def _get_sunrise_controller(self) -> SunriseController:
+        """Get current sunrise controller with up-to-date settings"""
+        if not self._alarm_system:
+            raise RuntimeError("AlarmSystem reference not set")
+            
+        settings = self._alarm_system.get_global_settings()
+        
+        # ✅ Sunrise controller bei jedem Aufruf mit aktuellen Settings erstellen
+        return SunriseController.get_instance(
+            SunriseConfig(
+                scene_name=settings["sunrise_scene_name"],
+                room_name=settings["room_name"],
+                start_brightness_percent=settings["start_brightness_percent"],
+                max_brightness_percent=settings["max_brightness"],
+            )
+        )
 
     def cancel_alarm(self, alarm_id: str) -> None:
         """Cancels a scheduled alarm."""
@@ -95,102 +91,27 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
                     if thread.is_alive():
                         thread.cancel()
 
-                # Stop any running sunrise
-                self._sunrise_controller.stop_sunrise()
+                # ✅ Stop sunrise mit aktueller Konfiguration
+                if self._alarm_system:
+                    try:
+                        sunrise_controller = self._get_sunrise_controller()
+                        sunrise_controller.stop_sunrise()
+                    except Exception as e:
+                        self.logger.error(f"Failed to stop sunrise: {e}")
 
                 del self._scheduled_alarms[alarm_id]
-
-    def is_scheduled(self, alarm_id: str) -> bool:
-        """Check if alarm is currently scheduled"""
-        return alarm_id in self._scheduled_alarms
-
-    def get_wake_up_sound_options(self):
-        """Get all available wake-up sound options."""
-        return self._sound_manager.get_wake_up_sound_options()
-
-    def get_get_up_sound_options(self):
-        """Get all available get-up sound options."""
-        return self._sound_manager.get_get_up_sound_options()
-
-    def _parse_time(self, time_str: str) -> float:
-        """Converts a time string in 'HH:MM' format to a Unix timestamp."""
-        hour, minute = map(int, time_str.split(":"))
-        now = datetime.now()
-        alarm_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        if alarm_time <= now:
-            alarm_time += timedelta(days=1)
-
-        return alarm_time.timestamp()
-
-    def _ensure_scheduler_running(self) -> None:
-        """Ensures that the scheduler thread is running."""
-        if not self._scheduler_thread or not self._scheduler_thread.is_alive():
-            self._running = True
-            self._scheduler_thread = threading.Thread(
-                target=self._scheduler_loop, daemon=True
-            )
-            self._scheduler_thread.start()
-
-    def _scheduler_loop(self) -> None:
-        """Main scheduler loop."""
-        while self._running:
-            time.sleep(60)  # Check every minute
-
-    def _schedule_alarm_execution(self, alarm_id: str) -> None:
-        """Schedules the execution of an alarm using timers."""
-        if alarm_id not in self._scheduled_alarms:
-            return
-
-        config = self._scheduled_alarms[alarm_id]
-
-        # Get current settings
-        settings = (
-            self._alarm_system.get_global_settings() if self._alarm_system else {}
-        )
-        wake_up_timer_duration = settings.get("wake_up_timer_duration", 540)
-
-        wake_up_time = config.wake_up_time
-        delay = max(0, wake_up_time - time.time())
-
-        wake_up_thread = threading.Timer(
-            delay,
-            self._execute_alarm,
-            args=[alarm_id, AlarmStage.WAKE_UP],
-        )
-        wake_up_thread.daemon = True
-        wake_up_thread.start()
-
-        get_up_time = wake_up_time + wake_up_timer_duration
-        delay_get_up = max(0, get_up_time - time.time())
-
-        get_up_thread = threading.Timer(
-            delay_get_up,
-            self._execute_alarm,
-            args=[alarm_id, AlarmStage.GET_UP],
-        )
-        get_up_thread.daemon = True
-        get_up_thread.start()
-
-        config.scheduled_threads = [wake_up_thread, get_up_thread]
-
-        print(
-            f"Alarm {alarm_id} scheduled: WAKE_UP in {delay:.1f}s, GET_UP in {delay_get_up:.1f}s"
-        )
 
     def _execute_alarm(self, alarm_id: str, stage: AlarmStage) -> None:
         """Executes an alarm using CURRENT settings."""
         if alarm_id not in self._scheduled_alarms:
             return
 
-        # Get CURRENT settings
         if not self._alarm_system:
             self.logger.error("No AlarmSystem reference available")
             return
 
         settings = self._alarm_system.get_global_settings()
 
-        # Select sound based on stage
         sound_id = (
             settings["wake_up_sound_id"]
             if stage == AlarmStage.WAKE_UP
@@ -201,31 +122,37 @@ class AlarmManager(LoggingMixin, metaclass=SingletonMetaClass):
             f"Alarm {alarm_id} triggered: {stage.value} with sound {sound_id}"
         )
 
-        # Start sunrise for wake-up stage
+        # ✅ Start sunrise mit aktuellen Settings
         if stage == AlarmStage.WAKE_UP and settings["use_sunrise"]:
-            self._sunrise_controller.start_sunrise(
-                duration_seconds=settings["wake_up_timer_duration"],
-                max_brightness=settings["max_brightness"],
-            )
+            try:
+                sunrise_controller = self._get_sunrise_controller()
+                sunrise_controller.start_sunrise(
+                    duration_seconds=settings["wake_up_timer_duration"],
+                    max_brightness=settings["max_brightness"],
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to start sunrise: {e}")
 
-        AudioPlayerFactory.get_shared_instance().play_sound(
-            sound_id
-        )
+        AudioPlayerFactory.get_shared_instance().play_sound(sound_id)
 
         if stage == AlarmStage.GET_UP:
             self._alarm_system.reschedule_alarm_for_tomorrow(alarm_id)
 
 
+
 @dataclass
 class GlobalAlarmSettings:
     """Global settings for all alarms"""
-
-    wake_up_timer_duration: int = 540  # 9 minutes
+    wake_up_timer_duration: int = 540
     use_sunrise: bool = True
     max_brightness: float = 75.0
     volume: float = 0.5
     wake_up_sound_id: str = "wake_up_sounds/wake-up-focus"
     get_up_sound_id: str = "get_up_sounds/get-up-blossom"
+    
+    sunrise_scene_name: str = "Majestätischer Morgen"
+    start_brightness_percent: float = 0.01
+    room_name: str = "Zimmer 1"
 
 
 class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
@@ -393,6 +320,15 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
                 self._alarm_manager.cancel_alarm(alarm_id)
                 self._schedule_if_needed(alarm_info)
                 self.logger.info(f"Rescheduled alarm {alarm_id} for tomorrow")
+                
+    def set_sunrise_scene(self, scene_name: str) -> None:
+            """Set the scene used for sunrise simulation."""
+            if not scene_name or not scene_name.strip():
+                raise ValueError("Scene name cannot be empty.")
+
+            old_value = self._settings.sunrise_scene_name
+            self._settings.sunrise_scene_name = scene_name
+            self.logger.info(f"Sunrise scene updated: {old_value} → {scene_name}")
 
     def _schedule_if_needed(self, alarm_info: AlarmInfo) -> None:
         """Schedule alarm if it should be active"""

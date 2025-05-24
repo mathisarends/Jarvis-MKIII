@@ -163,6 +163,21 @@ class AlarmService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to set get-up sound: {str(e)}"
             )
+            
+    def set_sunrise_scene(self, scene_name: str) -> dict:   
+        """Set the global sunrise scene for all alarms"""
+        try:
+            self.alarm_system.set_sunrise_scene(scene_name)
+            return {
+                "message": f"Sunrise scene set to {scene_name}",
+                "sunrise_scene": scene_name,
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to set sunrise scene: {str(e)}"
+            )
 
     def get_global_settings(self) -> dict:
         """Get all global alarm settings"""

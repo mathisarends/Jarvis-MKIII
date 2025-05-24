@@ -121,6 +121,23 @@ export const settingsApi = {
     const response = await api.get("/settings/available-scenes");
     return response.data;
   },
+
+  activateSceneTemporarily: async (
+    sceneName: string,
+    duration: number = 2
+  ): Promise<{
+    message: string;
+    scene_name: string;
+    duration: number;
+    room_name: string;
+  }> => {
+    const response = await api.post("/settings/scenes/activate-temporarily", {
+      scene_name: sceneName,
+      duration: duration,
+      room_name: "Zimmer 1",
+    });
+    return response.data;
+  },
 };
 
 export const audioSystemApi = {

@@ -125,19 +125,11 @@ const ConfigScreen: React.FC = () => {
   // ← Verbesserte Handler-Funktion für Szenen mit active state
   const onSceneSelect = async (sceneName: string) => {
     try {
-      // Optimistic update - sofort UI aktualisieren
+      // Option 1: Temporäre Aktivierung (für Preview)
       setActiveScene(sceneName);
-
-      console.log(`🌟 Szene ausgewählt: ${sceneName}`);
-
-      // TODO: Hier würden Sie die API aufrufen, um die Szene zu aktivieren
-      // await settingsApi.setActiveScene(sceneName);
-
-      // Temporary: Nach 2 Sekunden wieder deaktivieren (nur für Demo)
-      // setTimeout(() => setActiveScene(null), 2000);
+      await settingsApi.activateSceneTemporarily(sceneName, 8);
     } catch (error) {
       console.error("❌ Failed to activate scene:", error);
-      // Bei Fehler: Active state zurücksetzen
       setActiveScene(null);
     }
   };
