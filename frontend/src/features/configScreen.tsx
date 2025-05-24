@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { BrightnessSlider, VolumeSlider } from "../components/Slider";
+import { Volume2, Sun } from "lucide-react";
+import Slider from "../components/Slider"; // ← Direkter Import
 import { SoundSelector } from "../components/SoundSelector";
 import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
 import type { AlarmOptions } from "../types";
@@ -7,14 +8,16 @@ import { alarmApi, settingsApi, audioSystemApi } from "../api/alarmApi";
 import type { AudioSystem } from "../api/audioSystemModels";
 import { AudioSystemSelector } from "../components/audioSystemSelector";
 import LightSceneCard from "../components/LightSceneCard";
+import Spinner from "../components/Spinner";
+import { useToast } from "../contexts/ToastContext";
 
 const ConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [audioSystems, setAudioSystems] = useState<AudioSystem[]>([]);
   const [availableScenes, setAvailableScenes] = useState<string[]>([]);
-  const [activeScene, setActiveScene] = useState<string | null>(null); // ← Neuer State für aktive Szene
+  const [activeScene, setActiveScene] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { error: showError } = useToast();
 
   const [globalSettings, setGlobalSettings] = useState({
     brightness: 100,
@@ -27,9 +30,7 @@ const ConfigScreen: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        setError(null);
 
-        // ✅ Parallel loading mit allen APIs
         const [options, settings, audioSystemsResponse, scenes] = await Promise.all([
           alarmApi.getOptions(),
           settingsApi.getGlobal(),
@@ -42,16 +43,12 @@ const ConfigScreen: React.FC = () => {
         setAvailableScenes(scenes);
         setGlobalSettings({
           brightness: settings.max_brightness,
-          volume: settings.volume,
+          volume: settings.volume, // API gibt 0-1 zurück, das ist korrekt
           wakeUpSound: settings.wake_up_sound_id,
           getUpSound: settings.get_up_sound_id,
         });
-
-        // TODO: Hier würden Sie die aktuell aktive Szene vom Backend laden
-        // const currentScene = await settingsApi.getCurrentScene();
-        // setActiveScene(currentScene);
       } catch (err) {
-        setError("Fehler beim Laden der Daten");
+        showError("Fehler beim Laden der Daten", "Verbindung fehlgeschlagen");
         console.error("Error loading data:", err);
       } finally {
         setLoading(false);
@@ -67,15 +64,6 @@ const ConfigScreen: React.FC = () => {
       setGlobalSettings((prev) => ({ ...prev, brightness: value }));
     } catch (error) {
       console.error("❌ Failed to save brightness:", error);
-    }
-  };
-
-  const onVolumeChangeEnd = async (value: number) => {
-    try {
-      await settingsApi.setVolume(value);
-      setGlobalSettings((prev) => ({ ...prev, volume: value }));
-    } catch (error) {
-      console.error("❌ Failed to save volume:", error);
     }
   };
 
@@ -122,10 +110,8 @@ const ConfigScreen: React.FC = () => {
     }
   };
 
-  // ← Verbesserte Handler-Funktion für Szenen mit active state
   const onSceneSelect = async (sceneName: string) => {
     try {
-      // Option 1: Temporäre Aktivierung (für Preview)
       setActiveScene(sceneName);
       await settingsApi.activateSceneTemporarily(sceneName, 8);
     } catch (error) {
@@ -140,38 +126,29 @@ const ConfigScreen: React.FC = () => {
   };
 
   const onVolumeChange = (value: number) => {
-    setGlobalSettings((prev) => ({ ...prev, volume: value }));
+    // Umrechnung: Slider-Wert (0-100) → API-Wert (0-1)
+    const apiValue = value / 100;
+    setGlobalSettings((prev) => ({ ...prev, volume: apiValue }));
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-0">
-        <div className="flex items-center justify-center p-8">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
-            <p>Lade Alarm-Optionen...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Volume für Slider konvertieren (0-1 → 0-100)
+  const getVolumeForSlider = () => {
+    return Math.round(globalSettings.volume * 100);
+  };
 
-  if (error || !alarmOptions) {
-    return (
-      <div className="flex flex-col gap-0">
-        <div className="flex items-center justify-center p-8">
-          <div className="text-center text-red-600">
-            <p>{error || "Unbekannter Fehler beim Laden der Daten"}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Erneut versuchen
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  const onVolumeChangeEnd = async (value: number) => {
+    try {
+      // Umrechnung: Slider-Wert (0-100) → API-Wert (0-1)
+      const apiValue = value / 100;
+      await settingsApi.setVolume(apiValue);
+      setGlobalSettings((prev) => ({ ...prev, volume: apiValue }));
+    } catch (error) {
+      console.error("❌ Failed to save volume:", error);
+    }
+  };
+
+  if (loading || !alarmOptions) {
+    return <Spinner />;
   }
 
   return (
@@ -184,7 +161,7 @@ const ConfigScreen: React.FC = () => {
         {availableScenes.length > 0 && (
           <div className="w-full">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-800 ">Lichtszenen</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Lichtszenen</h3>
               {activeScene && (
                 <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">Aktiv: {activeScene}</div>
               )}
@@ -202,18 +179,23 @@ const ConfigScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Brightness and Volume Controls */}
-        <BrightnessSlider
+        {/* Brightness and Volume Controls - FIXED */}
+        <Slider
+          icon={<Sun className="w-4 h-4 text-gray-600" />}
+          label="Lamp Brightness"
           min={alarmOptions.brightness_range.min}
           max={alarmOptions.brightness_range.max}
           value={globalSettings.brightness}
           onChange={onBrightnessChange}
           onChangeEnd={onBrightnessChangeEnd}
         />
-        <VolumeSlider
-          min={alarmOptions.volume_range.min}
-          max={alarmOptions.volume_range.max}
-          value={globalSettings.volume}
+
+        <Slider
+          icon={<Volume2 className="w-4 h-4 text-gray-600" />}
+          label="Alarm Volume"
+          min={0}
+          max={100}
+          value={getVolumeForSlider()}
           onChange={onVolumeChange}
           onChangeEnd={onVolumeChangeEnd}
         />

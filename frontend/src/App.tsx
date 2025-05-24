@@ -5,22 +5,25 @@ import NavbarComponent from "./layout/Navbar";
 
 import { routes } from "./config/routeConfig";
 import { HeaderProvider } from "./contexts/headerContext";
+import { ToastProvider } from "./contexts/ToastContext";
 
 function App() {
   return (
     <Router>
-      <HeaderProvider>
-        <HeaderWrapper />
-        <AppLayout>
-          <Routes>
-            {routes.map((route) => (
-              <Route key={route.path} path={route.path} element={route.element} />
-            ))}
-          </Routes>
-        </AppLayout>
+      <ToastProvider>
+        <HeaderProvider>
+          <HeaderWrapper />
+          <AppLayout>
+            <Routes>
+              {routes.map((route) => (
+                <Route key={route.path} path={route.path} element={route.element} />
+              ))}
+            </Routes>
+          </AppLayout>
 
-        <NavbarComponent />
-      </HeaderProvider>
+          <NavbarComponent />
+        </HeaderProvider>
+      </ToastProvider>
     </Router>
   );
 }

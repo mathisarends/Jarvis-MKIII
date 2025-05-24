@@ -1,7 +1,8 @@
 import React from "react";
+import Spinner from "../components/Spinner";
 
 const HomeScreen: React.FC = () => {
-  return <div></div>;
+  return <Spinner />;
 };
 
 export default HomeScreen;

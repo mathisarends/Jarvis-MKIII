@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 
 from api.dependencies.audio import get_audio_player
-from api.models.alarm_models import BrightnessRequest, SoundRequest, VolumeRequest
-from api.models.scene_models import SceneActivationRequest, SceneActivationResponse
+from api.models.alarm_models import (BrightnessRequest, SoundRequest,
+                                     VolumeRequest)
+from api.models.scene_models import (SceneActivationRequest,
+                                     SceneActivationResponse)
 from api.services.alarm_service import AlarmService
 from api.services.hue_service import HueService
 from core.audio.audio_player_base import AudioPlayer
@@ -61,11 +63,13 @@ def get_global_settings(service: AlarmService = Depends(get_alarm_service)):
 
 
 @alarm_settings_router.put("/brightness")
-def set_brightness(
-    request: BrightnessRequest, service: AlarmService = Depends(get_alarm_service)
+async def set_brightness(
+    request: BrightnessRequest, alarm_service: AlarmService = Depends(get_alarm_service), hue_service: HueService = Depends(get_hue_service)
 ):
     """Set the global brightness for all alarms"""
-    return service.set_brightness(request.brightness)
+    await hue_service.set_temporary_brightness(request.brightness)
+    
+    return alarm_service.set_brightness(request.brightness)
 
 
 @alarm_settings_router.put("/volume")

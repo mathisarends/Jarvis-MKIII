@@ -62,6 +62,28 @@ class HueService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to activate scene: {str(e)}"
             )
+            
+    async def set_temporary_brightness(
+        self, brightness_percentage: int, duration: int = 4
+    ):
+        """Set temporary brightness for all lights in the room"""
+        if not self.groups_manager:
+            raise HTTPException(status_code=503, detail="Hue Bridge not available")
+
+        try:
+            room_controller = await self.groups_manager.get_controller("Zimmer 1")
+            
+            saved_state = await room_controller.save_state("previous_brightness")
+            await room_controller.set_brightness_percentage(brightness_percentage)
+
+            await asyncio.sleep(duration)
+
+            await room_controller.restore_state(saved_state)
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to set brightness: {str(e)}"
+            )
 
     def get_current_wake_up_scene(self) -> Optional[str]:
         """Get the currently configured wake-up scene"""

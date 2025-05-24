@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { soundApi } from "../api/alarmApi";
 import { useSoundPlayback } from "../contexts/soundPlaybackContext";
+import AccentCard from "./AccentCard";
 
 export interface Sound {
   id: string;
@@ -77,14 +78,8 @@ const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect }
   };
 
   return (
-    <div
-      className={`
-        bg-white rounded-lg shadow-sm overflow-hidden
-        border-l-4 transition-all duration-200
-        ${isSelected ? "border-l-teal-500 shadow-md" : "border-l-transparent shadow-sm"}
-      `}
-    >
-      <div className="flex items-center justify-between px-4 py-3">
+    <AccentCard isActive={isSelected} accentColor="teal">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 text-gray-600">
             {getIcon()}
@@ -122,7 +117,7 @@ const SoundOption: React.FC<SoundOptionProps> = ({ sound, isSelected, onSelect }
           </button>
         </div>
       </div>
-    </div>
+    </AccentCard>
   );
 };
 

@@ -5,6 +5,7 @@ import { useHeader } from "../contexts/headerContext";
 import TimePickerModal from "../components/TimePickerModal";
 import { alarmApi } from "../api/alarmApi";
 import type { AlarmStatus } from "../api/alarmModels";
+import Spinner from "../components/Spinner";
 
 const AlarmScreen: React.FC = () => {
   const { updateConfig, resetConfig } = useHeader();
@@ -107,11 +108,7 @@ const AlarmScreen: React.FC = () => {
   }, [updateConfig, resetConfig, openModal]);
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center py-16">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    );
+    return <Spinner />;
   }
 
   return (
