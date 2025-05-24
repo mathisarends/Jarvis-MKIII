@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 
 from api.dependencies.audio import get_audio_player
-from api.models.alarm_models import (BrightnessRequest, SoundRequest,
-                                     VolumeRequest)
-from api.models.scene_models import (SceneActivationRequest,
-                                     SceneActivationResponse)
+from api.models.alarm_models import BrightnessRequest, SoundRequest, VolumeRequest
+from api.models.scene_models import SceneActivationRequest, SceneActivationResponse
 from api.services.alarm_service import AlarmService
 from api.services.hue_service import HueService
 from core.audio.audio_player_base import AudioPlayer
@@ -21,6 +19,7 @@ def get_hue_service() -> HueService:
     """Dependency injection for Hue service"""
     return HueService()
 
+
 @alarm_settings_router.get("/available-scenes")
 async def get_available_scenes(
     room_name: str = "Zimmer 1",
@@ -28,6 +27,7 @@ async def get_available_scenes(
 ):
     """Get all available scenes for the configured room"""
     return await hue_service.get_available_scenes(room_name)
+
 
 @alarm_settings_router.post("/scenes/activate-temporarily")
 async def set_wake_up_scene(
@@ -37,22 +37,22 @@ async def set_wake_up_scene(
 ) -> SceneActivationResponse:
     """
     Temporarily activate a scene for a specified duration.
-    
-    The scene will be activated immediately and automatically restored 
+
+    The scene will be activated immediately and automatically restored
     to the previous state after the duration expires.
     """
     alarm_service.set_sunrise_scene(request.scene_name)
-    
+
     await hue_service.temporarily_activate_scene(
-        scene_name=request.scene_name,
-        duration=request.duration
+        scene_name=request.scene_name, duration=request.duration
     )
-        
+
     return SceneActivationResponse(
         message=f"Scene '{request.scene_name}' activated temporarily for {request.duration} seconds",
         scene_name=request.scene_name,
         duration=request.duration,
     )
+
 
 @alarm_settings_router.get("/")
 def get_global_settings(service: AlarmService = Depends(get_alarm_service)):
@@ -75,7 +75,7 @@ def set_volume(
     audio_player: AudioPlayer = Depends(get_audio_player),
 ):
     """Set the global volume for all alarms"""
-    audio_player.set_volume_level(request.volume)   
+    audio_player.set_volume_level(request.volume)
     audio_player.play_sound("sound_check")
     return service.set_volume(request.volume)
 

@@ -1,8 +1,13 @@
 from fastapi import APIRouter, Depends
 
-from api.models.alarm_models import (AlarmOptions, CancelAlarmResponse,
-                                     CreateAlarmRequest, CreateAlarmResponse,
-                                     PlaySoundResponse, StopSoundResponse)
+from api.models.alarm_models import (
+    AlarmOptions,
+    CancelAlarmResponse,
+    CreateAlarmRequest,
+    CreateAlarmResponse,
+    PlaySoundResponse,
+    StopSoundResponse,
+)
 from api.services.alarm_service import AlarmService
 
 alarm_router = APIRouter()

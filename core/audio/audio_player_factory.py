@@ -84,12 +84,12 @@ class AudioPlayerFactory:
             )
 
         return cls._instance
-    
+
     @classmethod
     def set_strategy(cls, new_player_class: Type[T], play_test_sound: bool = True) -> T:
         """
         Switch to a different audio player strategy at runtime.
-        
+
         This method safely transitions from the current audio player to a new one:
         1. Stops the current player
         2. Creates and starts the new player
@@ -120,12 +120,12 @@ class AudioPlayerFactory:
         old_player_class = cls._player_class
 
         try:
-            if hasattr(old_instance, 'stop'):
+            if hasattr(old_instance, "stop"):
                 old_instance.stop()
 
             cls._instance = new_player_class()
             cls._player_class = new_player_class
-            
+
             cls._instance.start()
 
             if play_test_sound:
@@ -137,10 +137,10 @@ class AudioPlayerFactory:
             # Rollback on failure
             cls._instance = old_instance
             cls._player_class = old_player_class
-            
+
             try:
                 # Try to restart the old player
-                if hasattr(old_instance, 'start'):
+                if hasattr(old_instance, "start"):
                     old_instance.start()
             except Exception as rollback_error:
                 # Critical failure - both new and old player failed

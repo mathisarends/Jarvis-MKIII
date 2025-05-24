@@ -163,8 +163,8 @@ class AlarmService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to set get-up sound: {str(e)}"
             )
-            
-    def set_sunrise_scene(self, scene_name: str) -> dict:   
+
+    def set_sunrise_scene(self, scene_name: str) -> dict:
         """Set the global sunrise scene for all alarms"""
         try:
             self.alarm_system.set_sunrise_scene(scene_name)

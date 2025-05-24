@@ -35,13 +35,13 @@ app.add_middleware(
 
 app.include_router(alarm_router, prefix="/alarms", tags=["alarms"])
 app.include_router(alarm_settings_router, prefix="/settings", tags=["settings"])
-app.include_router(
-    audio_system_router, prefix="/audio", tags=["alarm_system"]
-)
+app.include_router(audio_system_router, prefix="/audio", tags=["alarm_system"])
+
 
 @app.get("/", tags=["health"])
 def health_check():
     return {"message": "Jarvis Alarm API", "status": "healthy"}
+
 
 if __name__ == "__main__":
     print("Starting FastAPI server on http://localhost:8000")

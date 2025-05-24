@@ -272,9 +272,7 @@ class SonosPlayer(AudioPlayer):
         self._expected_next_position = (
             1  # Position, die als nächstes gespielt werden sollte
         )
-        self._queue_management_lock = (
-            threading.Lock()
-        )
+        self._queue_management_lock = threading.Lock()
         self._playback_sequence = []
         self._playing_position = 0
 
@@ -549,7 +547,7 @@ class SonosPlayer(AudioPlayer):
         except Exception as e:
             self.logger.error("Error playing sound %s: %s", sound_name, e)
             return False
-    
+
     @override
     def stop_sound(self):
         """Stop the currently playing sound"""
