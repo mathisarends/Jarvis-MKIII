@@ -84,6 +84,7 @@ export const settingsApi = {
     volume: number;
     wake_up_sound_id: string;
     get_up_sound_id: string;
+    sunrise_scene_name: string;
   }> => {
     const response = await api.get("/settings");
     return response.data;

@@ -10,7 +10,6 @@ import LightSceneSection from "../components/LightSceneSelection";
 const SoundConfigScreen: React.FC = () => {
   const [alarmOptions, setAlarmOptions] = useState<AlarmOptions | null>(null);
   const [availableScenes, setAvailableScenes] = useState<string[]>([]);
-  const [activeScene, setActiveScene] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { error: showError } = useToast();
 
@@ -19,6 +18,7 @@ const SoundConfigScreen: React.FC = () => {
     volume: 0.5,
     wakeUpSound: "",
     getUpSound: "",
+    sunriseSceneName: "",
   });
 
   useEffect(() => {
@@ -39,6 +39,7 @@ const SoundConfigScreen: React.FC = () => {
           volume: settings.volume,
           wakeUpSound: settings.wake_up_sound_id,
           getUpSound: settings.get_up_sound_id,
+          sunriseSceneName: settings.sunrise_scene_name,
         });
       } catch (err) {
         showError("Fehler beim Laden der Daten", "Verbindung fehlgeschlagen");
@@ -62,11 +63,13 @@ const SoundConfigScreen: React.FC = () => {
 
   const onSceneSelect = async (sceneName: string) => {
     try {
-      setActiveScene(sceneName);
+      setGlobalSettings((prev) => ({
+        ...prev,
+        sunriseSceneName: sceneName,
+      }));
       await settingsApi.activateSceneTemporarily(sceneName, 8);
     } catch (error) {
       console.error("❌ Failed to activate scene:", error);
-      setActiveScene(null);
     }
   };
 
@@ -80,7 +83,11 @@ const SoundConfigScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6">
-      <LightSceneSection availableScenes={availableScenes} activeScene={activeScene} onSceneSelect={onSceneSelect} />
+      <LightSceneSection
+        availableScenes={availableScenes}
+        activeScene={globalSettings.sunriseSceneName}
+        onSceneSelect={onSceneSelect}
+      />
 
       <Slider
         icon={<Sun className="w-4 h-4 text-gray-600" />}

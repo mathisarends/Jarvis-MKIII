@@ -8,7 +8,7 @@ const TimePickerModal: React.FC<{
   onClose: () => void;
   onSave: (time: string) => void;
 }> = ({ isOpen, onClose, onSave }) => {
-  const [hours, setHours] = useState("21");
+  const [hours, setHours] = useState("06");
   const [minutes, setMinutes] = useState("30");
 
   const hourOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));

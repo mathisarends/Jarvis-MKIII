@@ -6,7 +6,7 @@ import { SoundPlaybackProvider } from "../contexts/soundPlaybackContext";
 import type { AlarmOptions } from "../types";
 import { alarmApi, settingsApi, audioSystemApi } from "../api/alarmApi";
 import type { AudioSystem } from "../api/audioSystemModels";
-import { AudioSystemSelector } from "../components/audioSystemSelector";
+import { AudioSystemSelector } from "../components/AudioSystemSelector";
 import Spinner from "../components/Spinner";
 import { useToast } from "../contexts/ToastContext";
 

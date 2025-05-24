@@ -335,6 +335,7 @@ class AlarmSystem(LoggingMixin, metaclass=SingletonMetaClass):
             "volume": self._settings.volume,
             "wake_up_sound_id": self._settings.wake_up_sound_id,
             "get_up_sound_id": self._settings.get_up_sound_id,
+            "w": self._settings.sunrise_scene_name,
         }
 
     def create_alarm(self, alarm_id: str, time_str: str) -> AlarmInfo:

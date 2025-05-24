@@ -1,6 +1,6 @@
 import React from "react";
 import { AlarmClock, Lightbulb, Volume2 } from "lucide-react";
-import AlarmScreen from "../features/alarmScreen";
+import AlarmScreen from "../features/AlarmScreen";
 import LightConfigScreen from "../features/LightConfigScreen";
 import SoundConfigScreen from "../features/SoundConfigScreen";
 
